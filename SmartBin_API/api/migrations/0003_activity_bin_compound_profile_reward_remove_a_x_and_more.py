@@ -1,0 +1,94 @@
+import django.db.models.deletion
+from django.conf import settings
+from django.db import migrations, models
+
+
+class Migration(migrations.Migration):
+
+    dependencies = [
+        ('api', '0002_p_address_p_full_name_p_phone'),
+        migrations.swappable_dependency(settings.AUTH_USER_MODEL),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Activity',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('weight', models.FloatField(default=0.0)),
+                ('points', models.IntegerField(default=0)),
+                ('date', models.DateTimeField(auto_now_add=True)),
+                ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='Bin',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('bin_id', models.CharField(max_length=50, unique=True)),
+                ('current_qr_code', models.CharField(blank=True, max_length=100, null=True)),
+                ('lat', models.FloatField(blank=True, null=True)),
+                ('lng', models.FloatField(blank=True, null=True)),
+                ('status', models.CharField(default='idle', max_length=50)),
+                ('current_user', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='Compound',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=100)),
+                ('address', models.CharField(max_length=200)),
+                ('lat', models.FloatField(blank=True, null=True)),
+                ('lng', models.FloatField(blank=True, null=True)),
+                ('status', models.CharField(default='available', max_length=50)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='Profile',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('points', models.IntegerField(default=0)),
+                ('weight', models.FloatField(default=0.0)),
+                ('full_name', models.CharField(blank=True, max_length=100, null=True)),
+                ('phone', models.CharField(blank=True, max_length=20, null=True)),
+                ('address', models.CharField(blank=True, max_length=200, null=True)),
+                ('deposits', models.IntegerField(default=0)),
+                ('is_employee', models.BooleanField(default=False)),
+                ('user', models.OneToOneField(on_delete=django.db.models.deletion.CASCADE, to=settings.AUTH_USER_MODEL)),
+            ],
+        ),
+        migrations.CreateModel(
+            name='Reward',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
+                ('name', models.CharField(max_length=100)),
+                ('description', models.CharField(max_length=100)),
+                ('cost', models.IntegerField()),
+                ('is_active', models.BooleanField(default=True)),
+            ],
+        ),
+        migrations.RemoveField(
+            model_name='a',
+            name='x',
+        ),
+        migrations.DeleteModel(
+            name='b',
+        ),
+        migrations.DeleteModel(
+            name='o',
+        ),
+        migrations.RemoveField(
+            model_name='p',
+            name='x',
+        ),
+        migrations.DeleteModel(
+            name='r',
+        ),
+        migrations.DeleteModel(
+            name='a',
+        ),
+        migrations.DeleteModel(
+            name='p',
+        ),
+    ]

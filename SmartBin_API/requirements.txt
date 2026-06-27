@@ -1,0 +1,14 @@
+asgiref==3.11.1
+Django==6.0.4
+django-cors-headers==4.9.0
+django-ratelimit==4.1.0
+djangorestframework==3.17.1
+pillow==12.2.0
+python-dotenv==1.2.2
+sqlparse==0.5.5
+tzdata==2026.1
+
+channels>=4.0.0
+daphne>=4.0.0
+paho-mqtt>=2.0.0
+firebase-admin>=6.0.0

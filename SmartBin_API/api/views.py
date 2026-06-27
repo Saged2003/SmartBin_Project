@@ -1,0 +1,704 @@
+import uuid
+import math
+import os
+import json
+import firebase_admin
+import paho.mqtt.publish as publish
+from firebase_admin import credentials, messaging
+from django.core.mail import send_mail
+from rest_framework.decorators import api_view, permission_classes, parser_classes
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.contrib.auth.models import User
+from django.contrib.auth import authenticate
+from rest_framework.authtoken.models import Token
+from django_ratelimit.decorators import ratelimit
+from django.db.models import Sum, Count
+from django.db.models.functions import ExtractHour
+from django.conf import settings
+from django.utils import timezone
+from django.db import transaction
+from .models import Profile, Bin, Activity, Reward, RedeemedReward
+from .serializers import ActivitySerializer, RewardSerializer, BinSerializer, ProfileSerializer
+from channels.layers import get_channel_layer
+from asgiref.sync import async_to_sync
+
+
+def broadcast_bin_update():
+    try:
+        channel_layer = get_channel_layer()
+        if channel_layer:
+            async_to_sync(channel_layer.group_send)(
+                "map_updates",
+                {
+                    "type": "bin_update",
+                    "message": "update"
+                }
+            )
+    except Exception:
+        pass
+
+
+def send_fcm_notification(token, title, body):
+    try:
+        if not firebase_admin._apps:
+            cred_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'firebase_admin_cert.json')
+            if os.path.exists(cred_path):
+                cred = credentials.Certificate(cred_path)
+                firebase_admin.initialize_app(cred)
+        if firebase_admin._apps:
+            message = messaging.Message(
+                notification=messaging.Notification(title=title, body=body),
+                token=token,
+            )
+            messaging.send(message)
+    except Exception:
+        pass
+
+
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = math.sin(dlat/2)**2 + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon/2)**2
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return R * c
+
+
+def verify_hardware_token(bin_obj, provided_token):
+    if bin_obj.hardware_token and bin_obj.hardware_token != provided_token:
+        return False
+    return True
+
+
+def calculate_co2_saved(weight, material_type):
+    multipliers = {
+        'plastic': 1.5,
+        'glass': 0.3,
+        'paper': 0.9,
+        'metal': 2.0,
+        'cardboard': 0.9,
+        'aluminum': 2.0,
+    }
+    factor = multipliers.get(material_type, 1.0)
+    return weight * factor * (1.0 + 0.05 * math.log10(weight + 1.0))
+
+
+@api_view(['POST'])
+def register_user(request):
+    username = request.data.get('username')
+    password = request.data.get('password')
+    email = request.data.get('email')
+    full_name = request.data.get('full_name','')
+    phone = request.data.get('phone','')
+    is_employee = request.data.get('is_employee', False)
+
+    if User.objects.filter(username=username).exists():
+        return Response({'error': 'exists'}, status=400)
+
+    user = User.objects.create_user(username=username, password=password, email=email)
+    Profile.objects.create(
+        user=user, points=0, milestone_points=0, weight=0.0, co2_saved=0.0,
+        deposits=0, is_employee=is_employee, is_approved_employee=False,
+        full_name=full_name, phone=phone
+    )
+    token, created = Token.objects.get_or_create(user=user)
+
+    if is_employee:
+        try:
+            admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+            send_mail(
+                'New Employee Registration Request',
+                f'User {username} ({email}) requested to join as an employee.',
+                admin_email,
+                [admin_email],
+                fail_silently=True,
+            )
+        except Exception:
+            pass
+
+    return Response({
+        'message': 'ok',
+        'token': token.key,
+        'points': 0,
+        'username': username,
+        'is_employee': is_employee,
+        'is_approved_employee': False
+    })
+
+
+@ratelimit(key='ip', rate='5/m', block=False)
+@api_view(['POST'])
+def login_user(request):
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    username = request.data.get('username')
+    is_root_admin = False
+
+    try:
+        user_check = User.objects.get(username=username)
+        if user_check.email == admin_email and user_check.is_superuser:
+            is_root_admin = True
+    except User.DoesNotExist:
+        pass
+
+    if getattr(request, 'limited', False) and not is_root_admin:
+        return Response({'error': 'Too many requests. Try again later.'}, status=429)
+
+    password = request.data.get('password')
+    user = authenticate(username=username, password=password)
+
+    if user is not None:
+        token, created = Token.objects.get_or_create(user=user)
+        profile, created_profile = Profile.objects.get_or_create(user=user)
+
+        if created_profile:
+            profile.points = 0
+            profile.milestone_points = 0
+            profile.weight = 0.0
+            profile.co2_saved = 0.0
+            profile.deposits = 0
+            profile.save()
+
+        return Response({
+            'message': 'ok',
+            'token': token.key,
+            'points': profile.points,
+            'username': username,
+            'is_employee': profile.is_employee,
+            'is_approved_employee': profile.is_approved_employee,
+            'is_root_admin': is_root_admin,
+            'is_superuser': user.is_superuser,
+            'is_staff': user.is_staff
+        })
+    return Response({'error': 'wrong'}, status=400)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_profile(request):
+    username = request.query_params.get('username')
+    try:
+        user = User.objects.get(username=username)
+        admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+        request_is_root = (request.user.email == admin_email and request.user.is_superuser)
+        if request.user.username != username and not request_is_root:
+            return Response({'error': 'unauthorized'}, status=403)
+
+        profile, created = Profile.objects.get_or_create(user=user)
+        is_root_admin = (user.email == admin_email and user.is_superuser)
+
+        return Response({
+            'points': profile.points,
+            'milestone_points': profile.milestone_points,
+            'premium_unlocked': profile.premium_unlocked,
+            'weight': profile.weight,
+            'co2_saved': round(profile.co2_saved, 2),
+            'deposits': profile.deposits,
+            'full_name': profile.full_name or '',
+            'email': user.email or '',
+            'phone': profile.phone or '',
+            'address': profile.address or '',
+            'is_employee': profile.is_employee,
+            'is_approved_employee': profile.is_approved_employee,
+            'is_root_admin': is_root_admin,
+            'is_superuser': user.is_superuser,
+            'is_staff': user.is_staff,
+            'streak_count': profile.streak_count,
+            'profile_picture': profile.profile_picture.url if profile.profile_picture else None
+        })
+    except Exception:
+        return Response({'error': 'not found'}, status=404)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def validate_session(request):
+    try:
+        user = User.objects.get(username=request.user.username)
+        if not user.is_active:
+            return Response({'error': 'inactive'}, status=401)
+        return Response({'message': 'valid'}, status=200)
+    except User.DoesNotExist:
+        return Response({'error': 'not found'}, status=404)
+
+
+@api_view(['PATCH'])
+@permission_classes([IsAuthenticated])
+@parser_classes([MultiPartParser, FormParser, JSONParser])
+def update_profile(request):
+    user = request.user
+    profile, created = Profile.objects.get_or_create(user=user)
+    if 'email' in request.data:
+        user.email = request.data.get('email')
+        user.save()
+
+    serializer = ProfileSerializer(profile, data=request.data, partial=True)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({
+            'message': 'updated',
+            'profile_picture': profile.profile_picture.url if profile.profile_picture else None
+        })
+    return Response({'error': str(serializer.errors)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def approve_employee(request):
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    if not (request.user.email == admin_email and request.user.is_superuser):
+        return Response({'error': 'unauthorized'}, status=403)
+
+    target_username = request.data.get('username')
+    action = request.data.get('action')
+    try:
+        target_user = User.objects.get(username=target_username)
+        profile, created = Profile.objects.get_or_create(user=target_user)
+        if action == 'approve':
+            profile.is_approved_employee = True
+            profile.save()
+            return Response({'message': 'approved'})
+        elif action == 'reject':
+            target_user.delete()
+            return Response({'message': 'rejected'})
+    except Exception as error:
+        return Response({'error': str(error)}, status=400)
+
+
+@ratelimit(key='ip', rate='10/m', block=False)
+@api_view(['POST'])
+def esp_get_code(request):
+    if getattr(request, 'limited', False):
+        return Response({'error': 'Too many requests. Try again later.'}, status=429)
+
+    bin_id = request.data.get('bin_id')
+    hardware_token = request.data.get('hardware_token')
+    try:
+        bin_obj, created = Bin.objects.get_or_create(bin_id=bin_id)
+        if not created and not verify_hardware_token(bin_obj, hardware_token):
+            return Response({'error': 'Unauthorized Hardware'}, status=403)
+
+        if bin_obj.status != 'idle':
+            return Response({'code': bin_obj.current_qr_code, 'status': bin_obj.status})
+
+        new_code = str(uuid.uuid4())
+        bin_obj.current_qr_code = new_code
+        bin_obj.save()
+        return Response({'code': new_code, 'status': 'idle'})
+    except Exception as error:
+        return Response({'error': str(error)}, status=400)
+
+
+@ratelimit(key='ip', rate='5/m', block=False)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def user_scan_qr(request):
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    is_root_admin = (request.user.email == admin_email and request.user.is_superuser)
+    if getattr(request, 'limited', False) and not is_root_admin:
+        return Response({'error': 'Too many requests. Try again later.'}, status=429)
+
+    code = request.data.get('code')
+    user = request.user
+    try:
+        bin_obj = Bin.objects.get(current_qr_code=code)
+        if bin_obj.status != 'idle':
+            return Response({'error': 'invalid code'}, status=400)
+
+        bin_obj.current_user = user
+        bin_obj.status = 'scanned'
+        bin_obj.save()
+        broadcast_bin_update()
+
+        broker_url = getattr(settings, 'MQTT_BROKER_URL', '127.0.0.1')
+        broker_port = getattr(settings, 'MQTT_BROKER_PORT', 1883)
+        command_payload = json.dumps({"cmd": "START_BIN"})
+        try:
+            publish.single(f"smartbin/{bin_obj.bin_id}/command", payload=command_payload, hostname=broker_url, port=int(broker_port))
+        except Exception:
+            pass
+        return Response({'message': 'scanned successfully'})
+    except Bin.DoesNotExist:
+        return Response({'error': 'invalid code'}, status=404)
+
+
+@ratelimit(key='ip', rate='10/m', block=False)
+@api_view(['POST'])
+def esp_check_scan(request):
+    if getattr(request, 'limited', False):
+        return Response({'error': 'Too many requests. Try again later.'}, status=429)
+
+    bin_id = request.data.get('bin_id')
+    hardware_token = request.data.get('hardware_token')
+    try:
+        bin_obj = Bin.objects.get(bin_id=bin_id)
+        if not verify_hardware_token(bin_obj, hardware_token):
+            return Response({'error': 'Unauthorized Hardware'}, status=403)
+
+        if bin_obj.status == 'scanned':
+            bin_obj.status = 'active'
+            bin_obj.save()
+            broadcast_bin_update()
+            return Response({'status': 'YES'})
+        return Response({'status': 'NO'})
+    except Bin.DoesNotExist:
+        return Response({'error': 'bin not found'}, status=404)
+
+
+@ratelimit(key='ip', rate='10/m', block=False)
+@api_view(['POST'])
+def esp_end_session(request):
+    if getattr(request, 'limited', False):
+        return Response({'error': 'Too many requests. Try again later.'}, status=429)
+
+    bin_id = request.data.get('bin_id')
+    hardware_token = request.data.get('hardware_token')
+    points = int(request.data.get('points', 0))
+    weight = float(request.data.get('weight', 0.0))
+    material_type = request.data.get('material_type', 'plastic').lower()
+    try:
+        bin_obj = Bin.objects.get(bin_id=bin_id)
+        if not verify_hardware_token(bin_obj, hardware_token):
+            return Response({'error': 'Unauthorized Hardware'}, status=403)
+
+        user = bin_obj.current_user
+        if user:
+            with transaction.atomic():
+                profile, created = Profile.objects.select_for_update().get_or_create(user=user)
+
+                from datetime import timedelta
+                now_date = timezone.now().date()
+                streak_multiplier = 1.0
+
+                if profile.last_activity_date:
+                    if profile.last_activity_date == now_date - timedelta(days=1):
+                        profile.streak_count += 1
+                    elif profile.last_activity_date < now_date - timedelta(days=1):
+                        profile.streak_count = 1
+                else:
+                    profile.streak_count = 1
+
+                profile.last_activity_date = now_date
+
+                if profile.streak_count >= 7:
+                    streak_multiplier = 2.0
+                elif profile.streak_count >= 3:
+                    streak_multiplier = 1.5
+
+                final_points = int(points * streak_multiplier)
+
+                profile.points += final_points
+                profile.milestone_points += final_points
+                profile.weight += weight
+                profile.deposits += 1
+                saved_co2 = calculate_co2_saved(weight, material_type)
+                profile.co2_saved += saved_co2
+
+                while profile.milestone_points >= 1000:
+                    profile.premium_unlocked = True
+                    profile.milestone_points -= 1000
+                    if profile.fcm_token:
+                        send_fcm_notification(profile.fcm_token, "Premium Unlocked!", "Congratulations! You reached 1000 points and unlocked Premium Rewards.")
+                profile.save()
+                Activity.objects.create(user=user, points=final_points, weight=weight, co2_saved_in_activity=saved_co2, material_type=material_type)
+
+        bin_obj.status = 'idle'
+        bin_obj.current_user = None
+        bin_obj.current_qr_code = None
+        bin_obj.save()
+        broadcast_bin_update()
+        return Response({'message': 'session ended'})
+    except Bin.DoesNotExist:
+        return Response({'error': 'bin not found'}, status=404)
+
+
+@ratelimit(key='ip', rate='10/m', block=False)
+@api_view(['POST'])
+def esp_update_capacity(request):
+    if getattr(request, 'limited', False):
+        return Response({'error': 'Too many requests. Try again later.'}, status=429)
+
+    bin_id = request.data.get('bin_id')
+    hardware_token = request.data.get('hardware_token')
+    capacity = float(request.data.get('capacity', 0.0))
+    try:
+        bin_obj = Bin.objects.get(bin_id=bin_id)
+        if not verify_hardware_token(bin_obj, hardware_token):
+            return Response({'error': 'Unauthorized Hardware'}, status=403)
+
+        bin_obj.capacity = capacity
+        if capacity >= 80:
+            bin_obj.crowd_level = 'High Crowd'
+        elif capacity >= 50:
+            bin_obj.crowd_level = 'Medium Crowd'
+        else:
+            bin_obj.crowd_level = 'Low Crowd'
+        bin_obj.save()
+
+        if capacity >= 90.0:
+            employee_profiles = Profile.objects.filter(is_employee=True, is_approved_employee=True)
+            for emp in employee_profiles:
+                if emp.fcm_token:
+                    send_fcm_notification(emp.fcm_token, "Bin Full Alert", f"Bin {bin_id} has reached {capacity}% capacity and needs collection.")
+        broadcast_bin_update()
+        return Response({'message': 'Capacity updated successfully'})
+    except Bin.DoesNotExist:
+        return Response({'error': 'Bin not found'}, status=404)
+    except Exception as error:
+        return Response({'error': str(error)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def employee_update_location(request):
+    profile, created = Profile.objects.get_or_create(user=request.user)
+    if not profile.is_employee or not profile.is_approved_employee:
+        return Response({'error': 'unauthorized'}, status=403)
+
+    bin_id = request.data.get('bin_id')
+    try:
+        bin_obj = Bin.objects.filter(bin_id=bin_id).first()
+        if bin_obj:
+            serializer = BinSerializer(bin_obj, data=request.data, partial=True)
+        else:
+            serializer = BinSerializer(data=request.data, partial=True)
+        
+        if serializer.is_valid():
+            serializer.save()
+            broadcast_bin_update()
+            return Response({'message': 'location updated'})
+        else:
+            return Response({'error': str(serializer.errors)}, status=400)
+    except Exception as error:
+        return Response({'error': str(error)}, status=400)
+
+
+@api_view(['GET'])
+def get_all_bins(request):
+    lat_str = request.query_params.get('lat')
+    lng_str = request.query_params.get('lng')
+    page = int(request.query_params.get('page', 1))
+    limit = int(request.query_params.get('limit', 10))
+    start = (page - 1) * limit
+    end = start + limit
+
+    bins = Bin.objects.all()
+    bins_data = BinSerializer(bins, many=True).data
+
+    if lat_str and lng_str:
+        try:
+            u_lat = float(lat_str)
+            u_lng = float(lng_str)
+            for b in bins_data:
+                if b['lat'] is not None and b['lng'] is not None:
+                    dist = haversine(u_lat, u_lng, b['lat'], b['lng'])
+                    b['distance_km'] = round(dist, 2)
+                else:
+                    b['distance_km'] = None
+            bins_data.sort(key=lambda x: x['distance_km'] if x['distance_km'] is not None else float('inf'))
+        except ValueError:
+            pass
+
+    paginated_data = bins_data[start:end]
+    return Response(paginated_data)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_activities(request):
+    username = request.query_params.get('username')
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    request_is_root = (request.user.email == admin_email and request.user.is_superuser)
+    if request.user.username != username and not request_is_root:
+        return Response({'error': 'unauthorized'}, status=403)
+
+    page = int(request.query_params.get('page', 1))
+    limit = int(request.query_params.get('limit', 10))
+    start = (page - 1) * limit
+    end = start + limit
+    try:
+        user = User.objects.get(username=username)
+        activities = Activity.objects.filter(user=user).order_by('-date')
+        total_activities = activities.count()
+        paginated_activities = activities[start:end]
+        serializer = ActivitySerializer(paginated_activities, many=True)
+        return Response({
+            'total_activities': total_activities,
+            'page': page,
+            'limit': limit,
+            'data': serializer.data
+        })
+    except Exception:
+        return Response({'error': 'not found'}, status=404)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_rewards(request):
+    username = request.query_params.get('username')
+    category_filter = request.query_params.get('category', 'All')
+    user_points = 0
+    milestone_points = 0
+    premium_unlocked = False
+    redemption_level = 1
+
+    if username:
+        try:
+            u = User.objects.get(username=username)
+            p, created = Profile.objects.get_or_create(user=u)
+            user_points = p.points
+            milestone_points = p.milestone_points
+            premium_unlocked = p.premium_unlocked
+            redemption_level = p.redemption_level
+        except Exception:
+            pass
+
+    rewards = Reward.objects.all()
+    if category_filter.strip().lower() != 'all':
+        rewards = rewards.filter(category__iexact=category_filter.strip())
+
+    data = []
+    now = timezone.now()
+
+    for r in rewards:
+        r_data = RewardSerializer(r, context={'request': request}).data
+
+        is_expired = r.valid_until and r.valid_until < now
+        is_out_of_stock = r.stock_quantity == 0
+
+        if r.dynamic_limit > 0 and username:
+            user_redeemed_count = RedeemedReward.objects.filter(user__username=username, reward=r).count()
+            if user_redeemed_count >= r.dynamic_limit:
+                is_out_of_stock = True
+
+        if is_expired:
+            r_data['status'] = 'expired'
+            r_data['progress_percentage'] = 0.0
+        elif is_out_of_stock:
+            r_data['status'] = 'out_of_stock'
+            r_data['progress_percentage'] = 0.0
+        elif r.is_premium and not premium_unlocked:
+            r_data['status'] = 'locked'
+            r_data['progress_percentage'] = min(milestone_points / 1000.0, 1.0)
+        elif redemption_level < r.tier:
+            r_data['status'] = 'locked'
+            r_data['progress_percentage'] = 0.0
+        elif user_points >= r.required_points and user_points >= r.cost:
+            r_data['status'] = 'redeem'
+            r_data['progress_percentage'] = 1.0
+        else:
+            r_data['status'] = 'locked'
+            target = max(r.required_points, r.cost)
+            r_data['progress_percentage'] = min(user_points / target, 1.0) if target > 0 else 0.0
+
+        data.append(r_data)
+
+    points_left = 1000 - milestone_points if milestone_points < 1000 else 0
+    return Response({
+        'rewards': data,
+        'user_points': user_points,
+        'milestone_points': milestone_points,
+        'next_milestone': 1000,
+        'points_left': points_left,
+        'premium_unlocked': premium_unlocked,
+        'redemption_level': redemption_level
+    })
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+@transaction.atomic
+def redeem_reward(request):
+    reward_id = request.data.get('reward_id')
+    original_price = request.data.get('original_price')
+    user = request.user
+    try:
+        profile, created = Profile.objects.select_for_update().get_or_create(user=user)
+        reward = Reward.objects.select_for_update().get(id=reward_id)
+        now = timezone.now()
+
+        if reward.valid_until and reward.valid_until < now:
+            return Response({'error': 'reward expired'}, status=400)
+
+        if reward.stock_quantity == 0:
+            return Response({'error': 'reward out of stock'}, status=400)
+
+        if reward.dynamic_limit > 0:
+            user_redeemed_count = RedeemedReward.objects.filter(user=user, reward=reward).count()
+            if user_redeemed_count >= reward.dynamic_limit:
+                return Response({'error': 'reward limit reached'}, status=400)
+
+        if reward.is_premium and not profile.premium_unlocked:
+            return Response({'error': 'premium rewards locked'}, status=400)
+
+        if profile.redemption_level < reward.tier:
+            return Response({'error': 'tier too low'}, status=400)
+
+        if profile.points < reward.required_points:
+            return Response({'error': 'not enough points to unlock'}, status=400)
+
+        if profile.points < reward.cost:
+            return Response({'error': 'not enough points to redeem'}, status=400)
+
+        profile.points -= reward.cost
+        profile.save()
+
+        if reward.stock_quantity > 0:
+            reward.stock_quantity -= 1
+            reward.save()
+
+        RedeemedReward.objects.create(user=user, reward=reward)
+        response_data = {
+            'message': 'redeemed successfully',
+            'new_points': profile.points
+        }
+
+        if reward.discount_percentage is not None and original_price is not None:
+            price = float(original_price)
+            discount_amount = price * (reward.discount_percentage / 100.0)
+            final_price = price - discount_amount
+            response_data['discount_percentage'] = reward.discount_percentage
+            response_data['original_price'] = price
+            response_data['discount_amount'] = discount_amount
+            response_data['final_price'] = final_price
+
+        return Response(response_data)
+    except Reward.DoesNotExist:
+        return Response({'error': 'invalid reward'}, status=404)
+    except Exception as error:
+        return Response({'error': str(error)}, status=400)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def update_fcm_token(request):
+    token = request.data.get('fcm_token')
+    if not token:
+        return Response({"error": "FCM token is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    profile, created = Profile.objects.get_or_create(user=request.user)
+    profile.fcm_token = token
+    profile.save()
+    return Response({"message": "FCM token updated successfully"}, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def dashboard_stats(request):
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    if not (request.user.email == admin_email and request.user.is_superuser):
+        return Response({'error': 'unauthorized'}, status=403)
+
+    total_co2 = Profile.objects.aggregate(Sum('co2_saved'))['co2_saved__sum'] or 0.0
+    total_deposits = Profile.objects.aggregate(Sum('deposits'))['deposits__sum'] or 0
+    peak_hours = list(Activity.objects.annotate(hour=ExtractHour('date')).values('hour').annotate(count=Count('id')))
+    employees = Profile.objects.filter(is_employee=True).values('user__username', 'full_name', 'is_approved_employee')
+
+    return Response({
+        'total_co2_saved': round(total_co2, 2),
+        'total_usage_rate': total_deposits,
+        'peak_hours': peak_hours,
+        'employees': list(employees)
+    })
