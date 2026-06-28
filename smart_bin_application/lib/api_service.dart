@@ -2,6 +2,7 @@ import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'api_constants.dart';
+import 'package:easy_localization/easy_localization.dart';
 import 'navigator_service.dart';
 
 class ApiService {
@@ -66,7 +67,7 @@ class ApiService {
       await prefs.setBool('is_employee', response.data['is_employee']);
       return response.data;
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Login failed');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 
@@ -83,7 +84,7 @@ class ApiService {
       await prefs.setString('username', response.data['username']);
       return response.data;
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Registration failed');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 
@@ -94,7 +95,7 @@ class ApiService {
       final response = await _dio.get('/profile/', queryParameters: {'username': username});
       return response.data;
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Failed to load profile');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 
@@ -103,18 +104,67 @@ class ApiService {
       final response = await _dio.get('/bins/', queryParameters: {'lat': lat, 'lng': lng});
       return response.data;
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Failed to load bins');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 
-  Future<Map<String, dynamic>> getRewards() async {
+  Future<Map<String, dynamic>> getRewards({String category = 'All'}) async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final username = prefs.getString('username');
-      final response = await _dio.get('/rewards/', queryParameters: {'username': username});
+      final response = await _dio.get('/rewards/', queryParameters: {
+        'username': username,
+        'category': category,
+      });
       return response.data;
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Failed to load rewards');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
+    }
+  }
+
+  Future<Map<String, dynamic>> getActivities({int page = 1, int limit = 10}) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final username = prefs.getString('username');
+      final response = await _dio.get('/activities/', queryParameters: {
+        'username': username,
+        'page': page,
+        'limit': limit,
+      });
+      return response.data;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
+    }
+  }
+
+  Future<Map<String, dynamic>> updateProfile(Map<String, dynamic> data) async {
+    try {
+      final response = await _dio.patch('/update-profile/', data: data);
+      return response.data;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
+    }
+  }
+
+  Future<Map<String, dynamic>> getDashboardStats() async {
+    try {
+      final response = await _dio.get('/dashboard/stats/');
+      return response.data;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
+    }
+  }
+
+  Future<Map<String, dynamic>> employeeUpdateLocation(String binId, double lat, double lng) async {
+    try {
+      final response = await _dio.post('/employee/update-location/', data: {
+        'bin_id': binId,
+        'lat': lat,
+        'lng': lng,
+      });
+      return response.data;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 
@@ -126,7 +176,7 @@ class ApiService {
       });
       return response.data;
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Failed to redeem reward');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 
@@ -135,7 +185,7 @@ class ApiService {
       final response = await _dio.post('/user/scan-qr/', data: {'code': code});
       return response.data;
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Failed to scan QR');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 
@@ -143,7 +193,7 @@ class ApiService {
     try {
       await _dio.post('/update-fcm-token/', data: {'fcm_token': fcmToken});
     } on DioException catch (e) {
-      throw Exception(e.response?.data['error'] ?? 'Failed to update FCM token');
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }
   }
 }

@@ -109,7 +109,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                         children: [
                           Icon(Icons.inventory_2_outlined, color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white, size: 30),
                           const SizedBox(height: 12),
-                          Text('${userProvider.totalWeight.toStringAsFixed(1)} kg', style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
+                          Text('${userProvider.totalWeight.toStringAsFixed(1)} ${'kg'.tr()}', style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white, fontSize: 32, fontWeight: FontWeight.bold)),
                           Text('total_weight'.tr(), style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black54 : Colors.white70, fontSize: 13)),
                         ],
                       ),
@@ -163,7 +163,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text((activity['t'] ?? 'plastic').toString().toUpperCase(), style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 15)),
+                                        Text((activity['t'] ?? 'plastic').toString().toLowerCase().tr().toUpperCase(), style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 15)),
                                         const SizedBox(height: 4),
                                         Text(activity['date'] != null ? activity['date'].toString().substring(0, 10) : '', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                                       ],
@@ -174,7 +174,7 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                     children: [
                                       Text('+${activity['points'] ?? 0} ${'pts'.tr()}', style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 15)),
                                       const SizedBox(height: 4),
-                                      Text('${activity['weight'] ?? 0.0} kg', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                                      Text('${activity['weight'] ?? 0.0} ${'kg'.tr()}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
                                     ],
                                   ),
                                 ],

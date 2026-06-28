@@ -5,19 +5,19 @@
 
 class SensorManager {
 public:
-    void init();
-    
-    float getPlasticLevelPercentage();
-    float getMetalLevelPercentage();
+  void init();
 
-    bool isWastePresent();   
-    bool isMetalDetected();  
-    int checkWasteTypeOnLid();
+  float getPlasticLevelPercentage();
+  float getMetalLevelPercentage();
 
-    float getSingleDistance(uint8_t trigPin, uint8_t echoPin);
+  bool isWastePresent();
+  bool isMetalDetected();
+  int checkWasteTypeOnLid();
+
+  float getSingleDistance(uint8_t trigPin, uint8_t echoPin);
 
 private:
-    float calculatePercentage(float distance1, float distance2);
+  float calculatePercentage(float distance1, float distance2);
 };
 
 #endif

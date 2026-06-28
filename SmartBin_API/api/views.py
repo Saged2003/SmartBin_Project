@@ -280,6 +280,10 @@ def esp_get_code(request):
         if not created and not verify_hardware_token(bin_obj, hardware_token):
             return Response({'error': 'Unauthorized Hardware'}, status=403)
 
+        if not bin_obj.hardware_token and hardware_token:
+            bin_obj.hardware_token = hardware_token
+            bin_obj.save()
+
         if bin_obj.status != 'idle':
             return Response({'code': bin_obj.current_qr_code, 'status': bin_obj.status})
 
@@ -337,6 +341,10 @@ def esp_check_scan(request):
         if not verify_hardware_token(bin_obj, hardware_token):
             return Response({'error': 'Unauthorized Hardware'}, status=403)
 
+        if not bin_obj.hardware_token and hardware_token:
+            bin_obj.hardware_token = hardware_token
+            bin_obj.save()
+
         if bin_obj.status == 'scanned':
             bin_obj.status = 'active'
             bin_obj.save()
@@ -362,6 +370,10 @@ def esp_end_session(request):
         bin_obj = Bin.objects.get(bin_id=bin_id)
         if not verify_hardware_token(bin_obj, hardware_token):
             return Response({'error': 'Unauthorized Hardware'}, status=403)
+
+        if not bin_obj.hardware_token and hardware_token:
+            bin_obj.hardware_token = hardware_token
+            bin_obj.save()
 
         user = bin_obj.current_user
         if user:
@@ -428,6 +440,9 @@ def esp_update_capacity(request):
         if not verify_hardware_token(bin_obj, hardware_token):
             return Response({'error': 'Unauthorized Hardware'}, status=403)
 
+        if not bin_obj.hardware_token and hardware_token:
+            bin_obj.hardware_token = hardware_token
+
         bin_obj.capacity = capacity
         if capacity >= 80:
             bin_obj.crowd_level = 'High Crowd'
@@ -484,25 +499,28 @@ def get_all_bins(request):
     start = (page - 1) * limit
     end = start + limit
 
-    bins = Bin.objects.all()
-    bins_data = BinSerializer(bins, many=True).data
+    try:
+        bins = Bin.objects.all()
+        bins_data = BinSerializer(bins, many=True).data
 
-    if lat_str and lng_str:
-        try:
-            u_lat = float(lat_str)
-            u_lng = float(lng_str)
-            for b in bins_data:
-                if b['lat'] is not None and b['lng'] is not None:
-                    dist = haversine(u_lat, u_lng, b['lat'], b['lng'])
-                    b['distance_km'] = round(dist, 2)
-                else:
-                    b['distance_km'] = None
-            bins_data.sort(key=lambda x: x['distance_km'] if x['distance_km'] is not None else float('inf'))
-        except ValueError:
-            pass
+        if lat_str and lng_str:
+            try:
+                u_lat = float(lat_str)
+                u_lng = float(lng_str)
+                for b in bins_data:
+                    if b['lat'] is not None and b['lng'] is not None:
+                        dist = haversine(u_lat, u_lng, b['lat'], b['lng'])
+                        b['distance_km'] = round(dist, 2)
+                    else:
+                        b['distance_km'] = None
+                bins_data.sort(key=lambda x: x['distance_km'] if x['distance_km'] is not None else float('inf'))
+            except ValueError:
+                pass
 
-    paginated_data = bins_data[start:end]
-    return Response(paginated_data)
+        paginated_data = bins_data[start:end]
+        return Response(paginated_data)
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
 
 
 @api_view(['GET'])
@@ -557,12 +575,16 @@ def get_rewards(request):
 
     rewards = Reward.objects.all()
     if category_filter.strip().lower() != 'all':
-        rewards = rewards.filter(category__iexact=category_filter.strip())
+        normalized_cat = category_filter.strip().lower()
+        rewards = rewards.filter(category__iexact=normalized_cat)
 
     data = []
     now = timezone.now()
 
     for r in rewards:
+        if r.is_premium and user_points < 1000:
+            continue
+
         r_data = RewardSerializer(r, context={'request': request}).data
 
         is_expired = r.valid_until and r.valid_until < now
@@ -585,12 +607,12 @@ def get_rewards(request):
         elif redemption_level < r.tier:
             r_data['status'] = 'locked'
             r_data['progress_percentage'] = 0.0
-        elif user_points >= r.required_points and user_points >= r.cost:
+        elif user_points >= r.required_points:
             r_data['status'] = 'redeem'
             r_data['progress_percentage'] = 1.0
         else:
             r_data['status'] = 'locked'
-            target = max(r.required_points, r.cost)
+            target = r.required_points
             r_data['progress_percentage'] = min(user_points / target, 1.0) if target > 0 else 0.0
 
         data.append(r_data)
@@ -637,22 +659,24 @@ def redeem_reward(request):
             return Response({'error': 'tier too low'}, status=400)
 
         if profile.points < reward.required_points:
-            return Response({'error': 'not enough points to unlock'}, status=400)
+            return Response({'error': 'not enough points to unlock/redeem'}, status=400)
 
-        if profile.points < reward.cost:
-            return Response({'error': 'not enough points to redeem'}, status=400)
-
-        profile.points -= reward.cost
+        profile.points -= reward.required_points
         profile.save()
 
         if reward.stock_quantity > 0:
             reward.stock_quantity -= 1
             reward.save()
 
-        RedeemedReward.objects.create(user=user, reward=reward)
+        import string
+        import random
+        promo_code = 'SB-' + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
+
+        RedeemedReward.objects.create(user=user, reward=reward, promo_code=promo_code)
         response_data = {
             'message': 'redeemed successfully',
-            'new_points': profile.points
+            'new_points': profile.points,
+            'promo_code': promo_code
         }
 
         if reward.discount_percentage is not None and original_price is not None:
@@ -691,14 +715,37 @@ def dashboard_stats(request):
     if not (request.user.email == admin_email and request.user.is_superuser):
         return Response({'error': 'unauthorized'}, status=403)
 
-    total_co2 = Profile.objects.aggregate(Sum('co2_saved'))['co2_saved__sum'] or 0.0
-    total_deposits = Profile.objects.aggregate(Sum('deposits'))['deposits__sum'] or 0
-    peak_hours = list(Activity.objects.annotate(hour=ExtractHour('date')).values('hour').annotate(count=Count('id')))
-    employees = Profile.objects.filter(is_employee=True).values('user__username', 'full_name', 'is_approved_employee')
+    try:
+        total_co2 = Profile.objects.aggregate(Sum('co2_saved'))['co2_saved__sum'] or 0.0
+        total_deposits = Profile.objects.aggregate(Sum('deposits'))['deposits__sum'] or 0
+        peak_hours = list(Activity.objects.annotate(hour=ExtractHour('date')).values('hour').annotate(count=Count('id')))
+        employees = Profile.objects.filter(is_employee=True).values('user__username', 'full_name', 'is_approved_employee')
 
-    return Response({
-        'total_co2_saved': round(total_co2, 2),
-        'total_usage_rate': total_deposits,
-        'peak_hours': peak_hours,
-        'employees': list(employees)
-    })
+        return Response({
+            'total_co2_saved': round(total_co2, 2),
+            'total_usage_rate': total_deposits,
+            'peak_hours': peak_hours,
+            'employees': list(employees)
+        })
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_redemption_history(request):
+    try:
+        user = request.user
+        history = RedeemedReward.objects.filter(user=user).select_related('reward').order_by('-redeemed_at')
+        data = []
+        for h in history:
+            data.append({
+                'id': h.id,
+                'reward_name': h.reward.name,
+                'icon_category': h.reward.icon_category,
+                'redeemed_at': h.redeemed_at,
+                'promo_code': h.promo_code
+            })
+        return Response({'history': data})
+    except Exception as e:
+        return Response({'error': str(e)}, status=500)

@@ -8,6 +8,7 @@ import 'scanner_screen.dart';
 import 'animated_button.dart';
 import 'scan_success_screen.dart';
 import 'api_service.dart';
+import 'theme.dart';
 
 class HomeTab extends StatefulWidget {
   final Widget? navigatorKey;
@@ -141,9 +142,9 @@ class _HomeTabState extends State<HomeTab> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 40),
                     decoration: ShapeDecoration(
-                      color: const Color(0xFF32CD32),
+                      color: theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32),
                       shape: const StadiumBorder(),
-                      shadows: [BoxShadow(color: const Color(0xFF32CD32).withValues(alpha: 0.5), blurRadius: 10, offset: const Offset(0, 4))],
+                      shadows: [BoxShadow(color: (theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32)).withValues(alpha: 0.5), blurRadius: 10, offset: const Offset(0, 4))],
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
@@ -203,9 +204,17 @@ class _HomeTabState extends State<HomeTab> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('recent_activity'.tr(), style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: darkGreen)),
-                  GestureDetector(
+                  AnimatedButton(
                     onTap: widget.onViewAll,
-                    child: Text('view_all'.tr(), style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: accentGreen)),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      decoration: ShapeDecoration(
+                        color: theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32),
+                        shape: const StadiumBorder(),
+                        shadows: [BoxShadow(color: (theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32)).withValues(alpha: 0.3), blurRadius: 5, offset: const Offset(0, 2))],
+                      ),
+                      child: Text('view_all'.tr(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                    ),
                   ),
                 ],
               ),
@@ -236,7 +245,7 @@ class _HomeTabState extends State<HomeTab> {
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        Text((activity["t"] ?? 'plastic').toString().toUpperCase(), style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: darkGreen)),
+                                        Text((activity["t"] ?? 'plastic').toString().toLowerCase().tr().toUpperCase(), style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: darkGreen)),
                                         const SizedBox(height: 4),
                                         Text(activity["date"] != null ? activity["date"].toString().substring(0, 10) : "", style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: greyColor)),
                                       ],
@@ -247,7 +256,7 @@ class _HomeTabState extends State<HomeTab> {
                                     children: [
                                       Text('+${activity["points"] ?? activity["v"] ?? 0} ${'pts'.tr()}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: darkGreen)),
                                       const SizedBox(height: 4),
-                                      Text('${activity["weight"] ?? activity["w"] ?? 0.0} kg', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: greyColor)),
+                                      Text('${activity["weight"] ?? activity["w"] ?? 0.0} ${'kg'.tr()}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: greyColor)),
                                     ],
                                   ),
                                 ],

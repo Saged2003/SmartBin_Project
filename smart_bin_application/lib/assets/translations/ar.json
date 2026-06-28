@@ -153,5 +153,19 @@
   "entertainment": "ترفيه",
   "premium": "مميز",
   "PREMIUM": "مميز",
-  "unknown": "غير معروف"
+  "unknown": "غير معروف",
+  "plastic": "بلاستيك",
+  "aluminum": "ألمنيوم",
+  "glass": "زجاج",
+  "cardboard": "ورق مقوى",
+  "kg": "كجم",
+  "general": "عام",
+  "voucher": "قسيمة",
+  "currency": "ج.م",
+  "id_eco_user": "المعرف: مستخدم إيكو",
+  "my_rewards": "مكافآتي",
+  "promo_code": "رمز الخصم",
+  "your_promo_code": "رمز الخصم الخاص بك",
+  "redeemed_on": "تاريخ الاستبدال: ",
+  "no_history": "لم تقم باستبدال أي مكافأة بعد"
 }

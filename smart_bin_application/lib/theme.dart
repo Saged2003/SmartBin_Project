@@ -7,6 +7,8 @@ class AppTheme {
   static const Color greyColor = Color(0xFF9BABAB);
   static const Color premiumGold = Color(0xFFD4AF37);
 
+  static const Color darkPrimaryColor = Color(0xFF0A84FF);
+
   static ThemeData get lightTheme {
     return ThemeData(
       brightness: Brightness.light,
@@ -46,7 +48,7 @@ class AppTheme {
   static ThemeData get darkTheme {
     return ThemeData(
       brightness: Brightness.dark,
-      primaryColor: accentColor, 
+      primaryColor: darkPrimaryColor, 
       scaffoldBackgroundColor: const Color(0xFF121212),
       fontFamily: 'Arial',
       appBarTheme: const AppBarTheme(
@@ -63,7 +65,7 @@ class AppTheme {
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
-          backgroundColor: primaryColor,
+          backgroundColor: darkPrimaryColor,
           foregroundColor: Colors.white,
           shape: const StadiumBorder(),
           padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 24),
@@ -71,8 +73,8 @@ class AppTheme {
         ),
       ),
       colorScheme: ColorScheme.dark(
-        primary: primaryColor,
-        secondary: accentColor,
+        primary: darkPrimaryColor,
+        secondary: darkPrimaryColor,
         surface: const Color(0xFF1E1E1E), 
         surfaceContainerHighest: const Color(0xFF2C2C2C), 
       ),

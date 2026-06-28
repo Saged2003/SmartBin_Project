@@ -11,6 +11,7 @@ urlpatterns = [
     path('activities/', views.get_activities),
     path('rewards/', views.get_rewards),
     path('redeem-reward/', views.redeem_reward),
+    path('redemption-history/', views.get_redemption_history),
     path('approve-employee/', views.approve_employee),
     path('esp/get-code/', views.esp_get_code),
     path('esp/check-scan/', views.esp_check_scan),

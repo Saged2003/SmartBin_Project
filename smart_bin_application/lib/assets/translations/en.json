@@ -158,5 +158,18 @@
   "dark_mode": "Dark Mode",
   "light_mode": "Light Mode",
   "streak_bonus": "Streak Bonus",
-  "voucher": "Voucher"
+  "voucher": "Voucher",
+  "plastic": "Plastic",
+  "aluminum": "Aluminum",
+  "glass": "Glass",
+  "cardboard": "Cardboard",
+  "kg": "kg",
+  "general": "General",
+  "currency": "EGP",
+  "id_eco_user": "ID: ECO-USER",
+  "my_rewards": "My Rewards",
+  "promo_code": "Promo Code",
+  "your_promo_code": "Your Promo Code",
+  "redeemed_on": "Redeemed on: ",
+  "no_history": "No redeemed rewards yet"
 }

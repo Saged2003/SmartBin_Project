@@ -11,6 +11,7 @@ import 'edit_profile_screen.dart';
 import 'about_screen.dart';
 import 'employee_screen.dart';
 import 'animated_button.dart';
+import 'redemption_history_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -109,7 +110,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                     const SizedBox(height: 6),
                     Text(
-                      userProvider.email.isNotEmpty ? userProvider.email : 'ID: ECO-USER',
+                      userProvider.email.isNotEmpty ? userProvider.email : 'id_eco_user'.tr(),
                       style: const TextStyle(color: Colors.white70, fontSize: 14),
                     ),
                     const SizedBox(height: 50),
@@ -146,6 +147,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       ),
                       const SizedBox(height: 16),
                     ],
+                    AnimatedButton(
+                      onTap: () {
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => const RedemptionHistoryScreen()));
+                      },
+                      child: _buildMenuOption(Icons.card_giftcard, 'my_rewards'.tr(), theme.brightness == Brightness.dark ? Colors.green.shade900.withValues(alpha: 0.3) : Colors.green.shade50, Colors.green.shade600, false, theme),
+                    ),
+                    const SizedBox(height: 16),
                     AnimatedButton(
                       onTap: () async {
                         await Navigator.push(context, MaterialPageRoute(builder: (context) => EditProfileScreen(

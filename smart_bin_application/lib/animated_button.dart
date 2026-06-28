@@ -25,12 +25,18 @@ class _AnimatedButtonState extends State<AnimatedButton> with SingleTickerProvid
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTapDown: (_) => _controller.forward(),
-      onTapUp: (_) {
-        _controller.reverse();
-        widget.onTap();
+      onTapDown: (_) {
+        if (mounted) _controller.forward();
       },
-      onTapCancel: () => _controller.reverse(),
+      onTapUp: (_) {
+        if (mounted) {
+          _controller.reverse();
+          widget.onTap();
+        }
+      },
+      onTapCancel: () {
+        if (mounted) _controller.reverse();
+      },
       child: ScaleTransition(
         scale: _scaleAnimation,
         child: widget.child,

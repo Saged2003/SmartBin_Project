@@ -2,6 +2,19 @@ from django.db import models
 from django.contrib.auth.models import User
 
 
+REWARD_CATEGORY_CHOICES = [
+    ('general', 'General'),
+    ('cafe', 'Cafe'),
+    ('restaurant', 'Restaurant'),
+    ('telecom', 'Telecom'),
+    ('retail', 'Retail'),
+    ('cash', 'Cash'),
+    ('grocery', 'Grocery'),
+    ('entertainment', 'Entertainment'),
+    ('voucher', 'Voucher'),
+    ('premium', 'Premium'),
+]
+
 ICON_CATEGORY_CHOICES = [
     ('cafe', 'Cafe'),
     ('restaurant', 'Restaurant'),
@@ -13,6 +26,7 @@ ICON_CATEGORY_CHOICES = [
     ('voucher', 'Voucher'),
     ('premium', 'Premium'),
 ]
+
 
 
 class Profile(models.Model):
@@ -76,11 +90,11 @@ class Activity(models.Model):
 class Reward(models.Model):
     name = models.CharField(max_length=100)
     subtitle = models.CharField(max_length=100, null=True, blank=True)
-    category = models.CharField(max_length=50, default='General')
+    category = models.CharField(max_length=50, choices=REWARD_CATEGORY_CHOICES, default='general')
     tier = models.IntegerField(default=1)
     icon_category = models.CharField(max_length=50, choices=ICON_CATEGORY_CHOICES, default='voucher')
     description = models.CharField(max_length=100)
-    cost = models.IntegerField()
+    cost = models.IntegerField(null=True, blank=True)
     required_points = models.IntegerField(default=0)
     discount_percentage = models.FloatField(null=True, blank=True)
     is_premium = models.BooleanField(default=False)
@@ -88,6 +102,9 @@ class Reward(models.Model):
     stock_quantity = models.IntegerField(default=-1)
     dynamic_limit = models.IntegerField(default=-1)
     valid_until = models.DateTimeField(null=True, blank=True)
+
+    def save(self, *args, **kwargs):
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return self.name
@@ -97,6 +114,7 @@ class RedeemedReward(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     reward = models.ForeignKey(Reward, on_delete=models.CASCADE)
     redeemed_at = models.DateTimeField(auto_now_add=True)
+    promo_code = models.CharField(max_length=50, null=True, blank=True)
 
     def __str__(self):
         return f"{self.user.username} - {self.reward.name}"

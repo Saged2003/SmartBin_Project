@@ -16,7 +16,7 @@ class RewardsProvider extends ChangeNotifier {
   List<dynamic> rewards = [];
   bool isLoading = true;
   bool isOffline = false;
-  String selectedCategory = 'All';
+  String selectedCategory = 'all';
 
   void setCategory(String category) {
     selectedCategory = category;
@@ -32,7 +32,7 @@ class RewardsProvider extends ChangeNotifier {
     rewards = [];
     isLoading = false;
     isOffline = false;
-    selectedCategory = 'All';
+    selectedCategory = 'all';
     notifyListeners();
   }
 
@@ -110,12 +110,12 @@ class RewardsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<bool> redeemReward(int rewardId, int cost) async {
+  Future<String?> redeemReward(int rewardId, int cost) async {
     bool connectionActive = await _checkActualConnectivity();
     if (!connectionActive) {
       isOffline = true;
       notifyListeners();
-      return false;
+      return null;
     }
 
     SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -130,19 +130,45 @@ class RewardsProvider extends ChangeNotifier {
 
       if (response.statusCode == 401) {
         _handleUnauthorized();
-        return false;
+        return null;
       }
       if (response.statusCode == 200) {
         var respData = jsonDecode(response.body);
         userPoints = respData['new_points'] ?? userPoints;
         await prefs.setInt('points', userPoints);
         await fetchData();
-        return true;
+        return respData['promo_code'];
       }
     } catch (_) {
       isOffline = !(await _checkActualConnectivity());
     }
     await fetchData();
-    return false;
+    return null;
+  }
+
+  Future<List<dynamic>> fetchRedemptionHistory() async {
+    bool connectionActive = await _checkActualConnectivity();
+    if (!connectionActive) {
+      return [];
+    }
+    SharedPreferences prefs = await SharedPreferences.getInstance();
+    String? token = prefs.getString('token');
+
+    try {
+      var response = await http.get(
+        Uri.parse('${ApiConstants.baseUrl}/redemption-history/'),
+        headers: {"Content-Type": "application/json", "Authorization": "Token $token"},
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 401) {
+        _handleUnauthorized();
+        return [];
+      }
+      if (response.statusCode == 200) {
+        var respData = jsonDecode(response.body);
+        return respData['history'] ?? [];
+      }
+    } catch (_) {}
+    return [];
   }
 }

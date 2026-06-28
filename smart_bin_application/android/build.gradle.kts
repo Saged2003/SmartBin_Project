@@ -15,15 +15,9 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+
 subprojects {
     project.evaluationDependsOn(":app")
-    afterEvaluate {
-        if (hasProperty("android")) {
-            extensions.configure<com.android.build.gradle.BaseExtension>("android") {
-                ndkVersion = "27.0.12077973"
-            }
-        }
-    }
 }
 
 tasks.register<Delete>("clean") {

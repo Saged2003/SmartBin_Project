@@ -21,6 +21,8 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
   final MapController _mapController = MapController();
   WebSocket? _socket;
 
+  bool _isDisposed = false;
+
   @override
   void initState() {
     super.initState();
@@ -29,12 +31,14 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
 
   @override
   void dispose() {
+    _isDisposed = true;
     _socket?.close();
     _mapController.dispose();
     super.dispose();
   }
 
   Future<void> _connectWebSocket() async {
+    if (_isDisposed) return;
     try {
       _socket = await WebSocket.connect(ApiConstants.wsUrl).timeout(const Duration(seconds: 5));
       _socket?.listen((event) {
@@ -46,12 +50,18 @@ class _LiveMapScreenState extends State<LiveMapScreen> {
           }
         } catch (_) {}
       }, onError: (_) {
-        Future.delayed(const Duration(seconds: 5), _connectWebSocket);
+        if (!_isDisposed) {
+          Future.delayed(const Duration(seconds: 5), _connectWebSocket);
+        }
       }, onDone: () {
-        Future.delayed(const Duration(seconds: 5), _connectWebSocket);
+        if (!_isDisposed) {
+          Future.delayed(const Duration(seconds: 5), _connectWebSocket);
+        }
       });
     } catch (_) {
-      Future.delayed(const Duration(seconds: 5), _connectWebSocket);
+      if (!_isDisposed) {
+        Future.delayed(const Duration(seconds: 5), _connectWebSocket);
+      }
     }
   }
 

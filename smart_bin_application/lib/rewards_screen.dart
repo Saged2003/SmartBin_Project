@@ -24,35 +24,31 @@ class _RewardsScreenState extends State<RewardsScreen> {
   }
 
   static IconData _getCategoryIcon(String? category) {
-    switch (category?.trim().toLowerCase()) {
+    switch (category) {
       case 'cafe':
-      case 'مقهى':
         return Icons.local_cafe;
       case 'restaurant':
-      case 'مطعم':
         return Icons.restaurant;
       case 'telecom':
-      case 'اتصالات':
         return Icons.phone_android;
       case 'retail':
-      case 'تجزئة':
         return Icons.shopping_cart;
       case 'cash':
-      case 'كاش':
-      case 'نقدي':
         return Icons.attach_money;
       case 'grocery':
-      case 'بقالة':
         return Icons.shopping_bag;
       case 'entertainment':
-      case 'ترفيه':
         return Icons.confirmation_num;
       case 'premium':
-      case 'مميز':
         return Icons.workspace_premium;
       case 'voucher':
-      default:
         return Icons.card_giftcard;
+      case 'general':
+        return Icons.category;
+      case 'all':
+        return Icons.all_inclusive;
+      default:
+        return Icons.star;
     }
   }
 
@@ -91,7 +87,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
   }
 
   final List<String> _categories = [
-    'all', 'cafe', 'restaurant', 'telecom', 'retail', 'grocery', 'cash', 'entertainment', 'premium'
+    'all', 'general', 'cafe', 'restaurant', 'telecom', 'retail', 'grocery', 'cash', 'entertainment', 'premium'
   ];
 
   Widget _buildCategoryTabs(RewardsProvider rp, ThemeData theme) {
@@ -103,7 +99,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
         separatorBuilder: (context, index) => const SizedBox(width: 8),
         itemBuilder: (context, index) {
           String cat = _categories[index];
-          bool isSelected = rp.selectedCategory.trim().toLowerCase() == cat.trim().toLowerCase();
+          bool isSelected = rp.selectedCategory == cat;
           return GestureDetector(
             onTap: () => rp.setCategory(cat),
             child: Container(
@@ -142,8 +138,10 @@ class _RewardsScreenState extends State<RewardsScreen> {
     progress = (milestoneInCycle / 1000).clamp(0.0, 1.0);
 
     List<dynamic> filteredRewards = rp.rewards.where((r) {
-      if (rp.selectedCategory.trim().toLowerCase() == 'all') return true;
-      return (r['category'] ?? '').toString().trim().toLowerCase() == rp.selectedCategory.trim().toLowerCase();
+      bool isPremium = r['is_premium'] ?? false;
+      if (isPremium && rp.userPoints < 1000) return false;
+      if (rp.selectedCategory == 'all') return true;
+      return r['category']?.toString().toLowerCase() == rp.selectedCategory.toLowerCase();
     }).toList();
 
     return Scaffold(
@@ -248,7 +246,9 @@ class _RewardsScreenState extends State<RewardsScreen> {
                             itemCount: filteredRewards.length,
                             itemBuilder: (context, index) {
                               var rd = filteredRewards[index];
-                              int cost = rd['cost'] ?? 0;
+                              int requiredPoints = rd['required_points'] ?? 0;
+                              num? cost = rd['cost'];
+                              num? discountPercentage = rd['discount_percentage'];
                               String rewardStatus = rd['status'] ?? 'locked';
                               bool isUnlocked = rewardStatus == 'redeem';
                               bool isExpired = rewardStatus == 'expired';
@@ -284,10 +284,37 @@ class _RewardsScreenState extends State<RewardsScreen> {
                                     ? () {}
                                     : (isUnlocked
                                         ? () async {
-                                            bool success = await rp.redeemReward(rd['id'], cost);
-                                            if (success && mounted) {
+                                            String? promoCode = await rp.redeemReward(rd['id'], requiredPoints);
+                                            if (promoCode != null && mounted) {
                                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('reward_redeemed_successfully'.tr(), style: const TextStyle(color: Colors.white)), backgroundColor: Colors.green));
-                                            } else if (mounted && !success) {
+                                              showDialog(
+                                                context: context,
+                                                builder: (context) => AlertDialog(
+                                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                                                  title: Text('your_promo_code'.tr(), textAlign: TextAlign.center, style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold)),
+                                                  content: Column(
+                                                    mainAxisSize: MainAxisSize.min,
+                                                    children: [
+                                                      Text(rd['name'] ?? '', style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16), textAlign: TextAlign.center),
+                                                      const SizedBox(height: 24),
+                                                      Container(
+                                                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+                                                        decoration: BoxDecoration(
+                                                          color: theme.primaryColor.withValues(alpha: 0.1),
+                                                          borderRadius: BorderRadius.circular(12),
+                                                          border: Border.all(color: theme.primaryColor, width: 2),
+                                                        ),
+                                                        child: Text(promoCode, style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, letterSpacing: 3, color: theme.primaryColor)),
+                                                      ),
+                                                      const SizedBox(height: 16),
+                                                    ]
+                                                  ),
+                                                  actions: [
+                                                    TextButton(onPressed: () => Navigator.pop(context), child: Text('ok'.tr(), style: TextStyle(color: theme.primaryColor, fontWeight: FontWeight.bold)))
+                                                  ],
+                                                )
+                                              );
+                                            } else if (mounted && promoCode == null) {
                                               ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('failed_to_redeem'.tr())));
                                             }
                                           }
@@ -335,6 +362,19 @@ class _RewardsScreenState extends State<RewardsScreen> {
                                         Expanded(
                                           child: Text(rd['description'] ?? '', style: TextStyle(color: textColor.withValues(alpha: 0.7), fontSize: 11), maxLines: 2, overflow: TextOverflow.ellipsis),
                                         ),
+                                        if (discountPercentage != null && discountPercentage > 0) ...[
+                                          Text(
+                                            '${discountPercentage.toStringAsFixed(0)}% OFF',
+                                            style: TextStyle(color: textColor, fontWeight: FontWeight.w900, fontSize: 12),
+                                          ),
+                                          const SizedBox(height: 4),
+                                        ] else if (cost != null && cost > 0) ...[
+                                          Text(
+                                            '$cost ${'currency'.tr()} OFF',
+                                            style: TextStyle(color: textColor, fontWeight: FontWeight.w900, fontSize: 12),
+                                          ),
+                                          const SizedBox(height: 4),
+                                        ],
                                         if (validUntil != null && !isExpired) ...[
                                           Row(
                                             children: [
@@ -372,7 +412,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
                                           Row(
                                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                             children: [
-                                              Flexible(child: Text('$cost ${'pts'.tr()}', style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
+                                              Flexible(child: Text('$requiredPoints ${'pts'.tr()}', style: TextStyle(color: textColor, fontWeight: FontWeight.bold, fontSize: 13), overflow: TextOverflow.ellipsis)),
                                               Container(
                                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                                                 decoration: BoxDecoration(
