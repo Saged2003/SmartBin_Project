@@ -12,9 +12,10 @@ DEBUG = os.environ.get('DEBUG', 'False') == 'True'
 
 ALLOWED_HOSTS = ['*']
 
-SUPER_ADMIN_EMAIL = os.environ.get('SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+SUPER_ADMIN_EMAIL = os.environ.get('SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
 
 INSTALLED_APPS = [
+    'jazzmin',
     'daphne',
     'corsheaders',
     'django.contrib.admin',
@@ -123,3 +124,18 @@ EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 
 MQTT_BROKER_URL = os.environ.get('MQTT_BROKER_URL', '192.168.43.219')
 MQTT_BROKER_PORT = int(os.environ.get('MQTT_BROKER_PORT', 1883))
+
+# Jazzmin Admin Settings
+JAZZMIN_SETTINGS = {
+    "site_title": "Smart Bin Admin",
+    "site_header": "Smart Bin Admin",
+    "site_brand": "Smart Bin Admin",
+    "welcome_sign": "Welcome to the Smart Bin Admin",
+    "copyright": "Smart Bin System",
+    "show_ui_builder": False,
+}
+
+JAZZMIN_UI_TWEEKS = {
+    "theme": "slate",
+    "dark_mode_theme": "darkly",
+}

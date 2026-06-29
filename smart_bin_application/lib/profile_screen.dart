@@ -173,8 +173,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     AnimatedButton(
                       onTap: () => themeProvider.toggleTheme(),
                       child: _buildMenuOption(
-                        themeProvider.isDarkMode ? Icons.dark_mode : Icons.light_mode,
-                        'toggle_theme'.tr(),
+                        themeProvider.isDarkMode ? Icons.light_mode : Icons.dark_mode,
+                        themeProvider.isDarkMode ? 'light_mode'.tr() : 'dark_mode'.tr(),
                         theme.brightness == Brightness.dark ? Colors.blueGrey.shade800 : Colors.blueGrey.shade50,
                         theme.brightness == Brightness.dark ? Colors.blueGrey.shade100 : Colors.blueGrey.shade700,
                         false, theme,

@@ -8,13 +8,13 @@
 #include <WiFi.h>
 
 
-const char *ssid = "Roqaya";
-const char *password = "1234567";
-const char *mqtt_server = "192.168.43.111";
+const char *ssid = "YOUR_WIFI_SSID";
+const char *password = "YOUR_WIFI_PASSWORD";
+const char *mqtt_server = "YOUR_HOST_IPV4";
 const int mqtt_port = 1883;
 
-String BIN_ID = "BIN001";
-String HARDWARE_TOKEN = "MY_SECRET_TOKEN_123";
+String BIN_ID = "BIN-01";
+String HARDWARE_TOKEN = "secret-token-123";
 
 WiFiClient espClient;
 PubSubClient client(espClient);
@@ -71,7 +71,7 @@ void callback(char *topic, byte *payload, unsigned int length) {
     app.receiveBackendCommand("QR:" + code);
   } else if (topicStr.endsWith("/command")) {
     String cmd = doc["cmd"];
-    if (cmd == "START_BIN") {
+    if (cmd == "START_BIN" || cmd == "OPEN_BIN") {
       app.receiveBackendCommand("START_BIN");
     }
   }
