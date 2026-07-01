@@ -63,7 +63,10 @@ ASGI_APPLICATION = 'backend.asgi.application'
 
 CHANNEL_LAYERS = {
     "default": {
-        "BACKEND": "channels.layers.InMemoryChannelLayer"
+        "BACKEND": "channels_redis.core.RedisChannelLayer",
+        "CONFIG": {
+            "hosts": [(os.environ.get('REDIS_HOST', '127.0.0.1'), int(os.environ.get('REDIS_PORT', 6379)))],
+        },
     }
 }
 
@@ -76,8 +79,8 @@ DATABASES = {
 
 CACHES = {
     'default': {
-        'BACKEND': 'django.core.cache.backends.locmem.LocMemCache',
-        'LOCATION': 'smartbin-rate-limit',
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': f"redis://{os.environ.get('REDIS_HOST', '127.0.0.1')}:{os.environ.get('REDIS_PORT', 6379)}/1",
     }
 }
 
@@ -97,7 +100,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LANGUAGE_CODE = 'en-us'
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Africa/Cairo'
 USE_I18N = True
 USE_TZ = True
 
@@ -122,10 +125,11 @@ EMAIL_USE_TLS = True
 EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER')
 EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD')
 
-MQTT_BROKER_URL = os.environ.get('MQTT_BROKER_URL', '192.168.43.219')
-MQTT_BROKER_PORT = int(os.environ.get('MQTT_BROKER_PORT', 1883))
+MQTT_HOST = os.environ.get('MQTT_HOST', '127.0.0.1')
+MQTT_PORT = int(os.environ.get('MQTT_PORT', 1883))
+MQTT_USER = os.environ.get('MQTT_USER', 'smartbin')
+MQTT_PASSWORD = os.environ.get('MQTT_PASSWORD', 'smartbin123')
 
-# Jazzmin Admin Settings
 JAZZMIN_SETTINGS = {
     "site_title": "Smart Bin Admin",
     "site_header": "Smart Bin Admin",

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:http_parser/http_parser.dart';
@@ -11,6 +12,7 @@ import 'package:connectivity_plus/connectivity_plus.dart';
 import '../api_constants.dart';
 import '../navigator_service.dart';
 import '../location_service.dart';
+import '../api_service.dart';
 
 class UserProvider extends ChangeNotifier {
   UserProvider() {
@@ -26,8 +28,9 @@ class UserProvider extends ChangeNotifier {
   String address = "";
   String? profilePicUrl;
   int currentBalance = 0;
-  int milestonePoints = 0;
+
   double totalWeight = 0.0;
+  double co2Saved = 0.0;
   int deposits = 0;
   bool isEmployee = false;
   bool isApprovedEmployee = false;
@@ -38,6 +41,50 @@ class UserProvider extends ChangeNotifier {
   int currentPage = 1;
   bool hasMoreActivities = true;
 
+  WebSocket? _userSocket;
+  final StreamController<Map<String, dynamic>> _userStreamController = StreamController<Map<String, dynamic>>.broadcast();
+  Stream<Map<String, dynamic>> get userStream => _userStreamController.stream;
+
+  @override
+  void dispose() {
+    _userSocket?.close();
+    _userStreamController.close();
+    super.dispose();
+  }
+
+  Future<void> _connectUserWebSocket() async {
+    if (userName == "User" || userName.isEmpty) return;
+    try {
+      _userSocket?.close();
+      _userSocket = await WebSocket.connect(ApiConstants.userWsUrl(userName)).timeout(const Duration(seconds: 5));
+      _userSocket!.listen((message) {
+        final data = jsonDecode(message);
+        if (data['type'] == 'user_update') {
+          final payload = data['message'];
+          currentBalance = payload['points'] ?? currentBalance;
+          co2Saved = (payload['co2_saved'] ?? co2Saved).toDouble();
+          totalWeight = (payload['weight'] ?? totalWeight).toDouble();
+          deposits = payload['deposits'] ?? deposits;
+          
+          _userStreamController.add({
+            'points': currentBalance,
+            'points_added': payload['points_added'] ?? 0,
+            'co2_saved': co2Saved,
+            'weight': totalWeight,
+            'deposits': deposits
+          });
+          notifyListeners();
+        }
+      }, onDone: () {
+        Future.delayed(const Duration(seconds: 5), _connectUserWebSocket);
+      }, onError: (e) {
+        Future.delayed(const Duration(seconds: 5), _connectUserWebSocket);
+      });
+    } catch (_) {
+      Future.delayed(const Duration(seconds: 5), _connectUserWebSocket);
+    }
+  }
+
   void reset() {
     userName = "User";
     fullName = "";
@@ -46,8 +93,9 @@ class UserProvider extends ChangeNotifier {
     address = "";
     profilePicUrl = null;
     currentBalance = 0;
-    milestonePoints = 0;
+
     totalWeight = 0.0;
+    co2Saved = 0.0;
     deposits = 0;
     isEmployee = false;
     isApprovedEmployee = false;
@@ -82,6 +130,7 @@ class UserProvider extends ChangeNotifier {
       var box = await Hive.openBox('offline_data');
       await box.clear();
     } catch (_) {}
+    _userSocket?.close();
     NavigatorService.forceLogout();
   }
 
@@ -94,8 +143,9 @@ class UserProvider extends ChangeNotifier {
     address = prefs.getString('address') ?? "";
     profilePicUrl = prefs.getString('profile_picture');
     currentBalance = prefs.getInt('points') ?? 0;
-    milestonePoints = prefs.getInt('milestone_points') ?? (currentBalance % 1000);
+
     totalWeight = prefs.getDouble('weight') ?? 0.0;
+    co2Saved = prefs.getDouble('co2_saved') ?? 0.0;
     deposits = prefs.getInt('deposits') ?? 0;
     isEmployee = prefs.getBool('is_employee') ?? false;
     isApprovedEmployee = prefs.getBool('is_approved_employee') ?? false;
@@ -134,8 +184,9 @@ class UserProvider extends ChangeNotifier {
         var data = jsonDecode(response.body);
         userName = user;
         currentBalance = data['points'] ?? 0;
-        milestonePoints = data['milestone_points'] ?? 0;
+
         totalWeight = (data['weight'] ?? 0.0).toDouble();
+        co2Saved = (data['co2_saved'] ?? 0.0).toDouble();
         deposits = data['deposits'] ?? 0;
         fullName = data['full_name'] ?? "";
         email = data['email'] ?? "";
@@ -148,8 +199,9 @@ class UserProvider extends ChangeNotifier {
         isOffline = false;
 
         await prefs.setInt('points', currentBalance);
-        await prefs.setInt('milestone_points', milestonePoints);
+
         await prefs.setDouble('weight', totalWeight);
+        await prefs.setDouble('co2_saved', co2Saved);
         await prefs.setInt('deposits', deposits);
         await prefs.setString('full_name', fullName);
         await prefs.setString('email', email);
@@ -159,6 +211,8 @@ class UserProvider extends ChangeNotifier {
         await prefs.setBool('is_approved_employee', isApprovedEmployee);
         await prefs.setBool('is_root_admin', isRootAdmin);
         if (profilePicUrl != null) await prefs.setString('profile_picture', profilePicUrl!);
+        
+        _connectUserWebSocket();
       }
       isOffline = false;
     } catch (_) {
@@ -167,7 +221,7 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> fetchActivities({bool loadMore = false}) async {
+  Future<void> fetchActivities({bool loadMore = false, DateTime? startDate, DateTime? endDate}) async {
     if (loadMore && !hasMoreActivities) return;
     if (isLoading) return;
     isLoading = true;
@@ -191,8 +245,12 @@ class UserProvider extends ChangeNotifier {
       return;
     }
     try {
+      String url = '${ApiConstants.baseUrl}/activities/?username=$user&page=$currentPage&limit=10';
+      if (startDate != null) url += '&start_date=${startDate.toIso8601String()}';
+      if (endDate != null) url += '&end_date=${endDate.toIso8601String()}';
+      
       var response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/activities/?username=$user&page=$currentPage&limit=10'),
+        Uri.parse(url),
         headers: {"Authorization": "Token $token"},
       ).timeout(const Duration(seconds: 10));
       if (response.statusCode == 401) {
@@ -330,29 +388,22 @@ class UserProvider extends ChangeNotifier {
     return {'success': false, 'error': 'failed'};
   }
 
-  Future<Map<String, dynamic>> employeeUpdateLocation(String binId, double lat, double lng) async {
+  Future<Map<String, dynamic>> employeeUpdateLocation(String binId, double lat, double lng, {String? name}) async {
     isLoading = true;
     notifyListeners();
-    SharedPreferences prefs = await SharedPreferences.getInstance();
-    String? token = prefs.getString('token');
     try {
-      var response = await http.post(
-        Uri.parse('${ApiConstants.baseUrl}/employee/update-location/'),
-        headers: {"Content-Type": "application/json", "Authorization": "Token $token"},
-        body: jsonEncode({"bin_id": binId, "lat": lat, "lng": lng}),
-      ).timeout(const Duration(seconds: 15));
-      if (response.statusCode == 401) {
+      var result = await ApiService().employeeUpdateLocation(binId, lat, lng, name: name);
+      return {'success': true, 'data': result};
+    } catch (e) {
+      if (e.toString().contains('unauthorized')) {
         _handleUnauthorized();
         return {'success': false, 'error': 'unauthorized'};
       }
-      if (response.statusCode == 200) return {'success': true};
-    } catch (_) {
       return {'success': false, 'error': 'network'};
     } finally {
       isLoading = false;
       notifyListeners();
     }
-    return {'success': false, 'error': 'failed'};
   }
 
   Future<Position?> useCurrentLocation(BuildContext context) async {

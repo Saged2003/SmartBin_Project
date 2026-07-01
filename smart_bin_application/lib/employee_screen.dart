@@ -13,6 +13,7 @@ class EmployeeScreen extends StatefulWidget {
 
 class _EmployeeScreenState extends State<EmployeeScreen> {
   final TextEditingController binIdController = TextEditingController();
+  final TextEditingController binNameController = TextEditingController();
 
   @override
   void initState() {
@@ -32,6 +33,7 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
       binIdController.text,
       position.latitude,
       position.longitude,
+      name: binNameController.text,
     );
     if (result['success'] && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('location_updated'.tr()), backgroundColor: Colors.green));
@@ -91,6 +93,17 @@ class _EmployeeScreenState extends State<EmployeeScreen> {
                 ),
               ),
               const SizedBox(height: 16),
+              TextField(
+                controller: binNameController,
+                style: TextStyle(color: textColor),
+                decoration: InputDecoration(
+                  labelText: 'bin_name'.tr() + ' (${'optional'.tr()})',
+                  labelStyle: TextStyle(color: theme.brightness == Brightness.dark ? Colors.white70 : Colors.black54),
+                  filled: true,
+                  fillColor: secondaryColor,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                ),
+              ),
               const SizedBox(height: 32),
               isLoading
                   ? Center(child: CircularProgressIndicator(color: primaryColor))

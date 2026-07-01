@@ -132,7 +132,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
 
     final rp = context.watch<RewardsProvider>();
     double progress = 0.0;
-    int milestoneInCycle = rp.milestonePoints;
+    int milestoneInCycle = rp.userPoints % 1000;
     int pointsRemaining = 1000 - milestoneInCycle;
     if (pointsRemaining < 0) pointsRemaining = 0;
     progress = (milestoneInCycle / 1000).clamp(0.0, 1.0);
@@ -189,7 +189,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('premium_progress'.tr(), style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black54 : Colors.white70, fontSize: 13)),
-                          Text('${rp.nextMilestone} ${'pts'.tr()}', style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
+                          Text('1000 ${'pts'.tr()}', style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white, fontSize: 14, fontWeight: FontWeight.bold)),
                         ],
                       ),
                       const SizedBox(height: 12),
@@ -207,7 +207,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text('$pointsRemaining ${'points_to_unlock'.tr()}', style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black54 : Colors.white70, fontSize: 12)),
-                          if (rp.premiumUnlocked)
+                          if (rp.userPoints >= 1000)
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                               decoration: BoxDecoration(color: premiumGold, borderRadius: BorderRadius.circular(8)),
@@ -241,7 +241,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
                               crossAxisCount: 2,
                               crossAxisSpacing: 16,
                               mainAxisSpacing: 16,
-                              childAspectRatio: 0.54,
+                              childAspectRatio: 0.95,
                             ),
                             itemCount: filteredRewards.length,
                             itemBuilder: (context, index) {
@@ -263,9 +263,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
                               Color cardColor = isDisabled
                                   ? (theme.brightness == Brightness.dark ? Colors.grey.shade800 : Colors.grey.shade400)
                                   : (isPremium ? const Color(0xFF1A1A2E) : (theme.brightness == Brightness.dark ? theme.colorScheme.surface : primaryColor));
-                              Color iconBgColor = isDisabled
-                                  ? (theme.brightness == Brightness.dark ? Colors.grey.shade700 : Colors.grey.shade300)
-                                  : (isPremium ? premiumGold.withValues(alpha: 0.2) : secondaryColor);
+                              Color iconBgColor = secondaryColor;
                               Color iconColor = isDisabled
                                   ? (theme.brightness == Brightness.dark ? Colors.grey.shade500 : Colors.grey.shade600)
                                   : (isPremium ? premiumGold : primaryColor);
@@ -324,7 +322,7 @@ class _RewardsScreenState extends State<RewardsScreen> {
                                 child: Opacity(
                                   opacity: (!isUnlocked && !isDisabled) ? 0.7 : 1.0,
                                   child: Container(
-                                    padding: const EdgeInsets.all(14),
+                                    padding: const EdgeInsets.all(10),
                                     decoration: BoxDecoration(
                                       color: cardColor,
                                       borderRadius: BorderRadius.circular(20),
@@ -346,9 +344,9 @@ class _RewardsScreenState extends State<RewardsScreen> {
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
                                             Container(
-                                              padding: const EdgeInsets.all(10),
-                                              decoration: BoxDecoration(color: iconBgColor, borderRadius: BorderRadius.circular(12)),
-                                              child: Icon(_getCategoryIcon(iconCategory), color: iconColor, size: 24),
+                                              padding: const EdgeInsets.all(6),
+                                              decoration: BoxDecoration(color: iconBgColor, borderRadius: BorderRadius.circular(10)),
+                                              child: Icon(_getCategoryIcon(iconCategory), color: iconColor, size: 20),
                                             ),
                                             if (!isUnlocked && !isDisabled)
                                               Icon(Icons.lock_outline, color: textColor.withValues(alpha: 0.5), size: 18),

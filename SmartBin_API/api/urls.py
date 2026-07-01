@@ -6,7 +6,7 @@ urlpatterns = [
     path('login/', views.login_user),
     path('profile/', views.get_profile),
     path('update-profile/', views.update_profile),
-    path('update-fcm-token/', views.update_fcm_token),
+
     path('validate-session/', views.validate_session),
     path('activities/', views.get_activities),
     path('rewards/', views.get_rewards),
@@ -22,4 +22,6 @@ urlpatterns = [
     path('employee/update-location/', views.employee_update_location),
     path('bins/', views.get_all_bins),
     path('dashboard/stats/', views.dashboard_stats),
+    path('leaderboard/', views.get_leaderboard),
+    path('sync-ble-offline/', views.sync_ble_offline),
 ]

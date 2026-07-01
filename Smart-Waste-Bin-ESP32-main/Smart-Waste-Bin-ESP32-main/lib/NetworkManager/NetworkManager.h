@@ -20,7 +20,7 @@ public:
   String getQRCode();
   bool checkScan();
   bool updateCapacity(float capacity);
-  bool endSession(int points, float weight);
+  bool endSession(int points, float weight, String materialType);
 };
 
 #endif

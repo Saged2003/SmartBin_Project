@@ -9,8 +9,7 @@ import '../navigator_service.dart';
 
 class RewardsProvider extends ChangeNotifier {
   int userPoints = 0;
-  int milestonePoints = 0;
-  int nextMilestone = 1000;
+
   int pointsLeft = 1000;
   bool premiumUnlocked = false;
   List<dynamic> rewards = [];
@@ -25,8 +24,7 @@ class RewardsProvider extends ChangeNotifier {
 
   void reset() {
     userPoints = 0;
-    milestonePoints = 0;
-    nextMilestone = 1000;
+
     pointsLeft = 1000;
     premiumUnlocked = false;
     rewards = [];
@@ -64,8 +62,7 @@ class RewardsProvider extends ChangeNotifier {
       var data = jsonDecode(cachedRewards);
       rewards = data['rewards'] ?? [];
       userPoints = data['user_points'] ?? prefs.getInt('points') ?? 0;
-      milestonePoints = data['milestone_points'] ?? 0;
-      nextMilestone = data['next_milestone'] ?? 1000;
+
       pointsLeft = data['points_left'] ?? 1000;
       premiumUnlocked = data['premium_unlocked'] ?? false;
     }
@@ -96,8 +93,7 @@ class RewardsProvider extends ChangeNotifier {
         prefs.setString('cached_rewards', response.body);
         rewards = data['rewards'] ?? [];
         userPoints = data['user_points'] ?? 0;
-        milestonePoints = data['milestone_points'] ?? 0;
-        nextMilestone = data['next_milestone'] ?? 1000;
+
         pointsLeft = data['points_left'] ?? 1000;
         premiumUnlocked = data['premium_unlocked'] ?? false;
         isOffline = false;
@@ -146,7 +142,7 @@ class RewardsProvider extends ChangeNotifier {
     return null;
   }
 
-  Future<List<dynamic>> fetchRedemptionHistory() async {
+  Future<List<dynamic>> fetchRedemptionHistory({DateTime? startDate, DateTime? endDate}) async {
     bool connectionActive = await _checkActualConnectivity();
     if (!connectionActive) {
       return [];
@@ -155,8 +151,14 @@ class RewardsProvider extends ChangeNotifier {
     String? token = prefs.getString('token');
 
     try {
+      String url = '${ApiConstants.baseUrl}/redemption-history/';
+      if (startDate != null || endDate != null) {
+        url += '?';
+        if (startDate != null) url += 'start_date=${startDate.toIso8601String()}&';
+        if (endDate != null) url += 'end_date=${endDate.toIso8601String()}&';
+      }
       var response = await http.get(
-        Uri.parse('${ApiConstants.baseUrl}/redemption-history/'),
+        Uri.parse(url),
         headers: {"Content-Type": "application/json", "Authorization": "Token $token"},
       ).timeout(const Duration(seconds: 10));
 

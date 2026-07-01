@@ -10,6 +10,14 @@ void MotorController::init() {
   stepper.setMaxSpeed(1000.0);
   stepper.setAcceleration(500.0);
   stepper.setCurrentPosition(0);
+  
+  ESP32PWM::allocateTimer(0);
+  ESP32PWM::allocateTimer(1);
+  ESP32PWM::allocateTimer(2);
+  ESP32PWM::allocateTimer(3);
+  lidServo.setPeriodHertz(50);
+  lidServo.attach(SERVO_PIN, 500, 2400);
+  lidServo.write(0);
 }
 
 bool MotorController::tiltToPlastic() {
@@ -54,4 +62,16 @@ bool MotorController::runToPosition() {
 
   digitalWrite(ENABLE_PIN, HIGH);
   return true;
+}
+
+void MotorController::openLid() {
+  Serial.println("Opening Lid...");
+  lidServo.write(90);
+  delay(1000);
+}
+
+void MotorController::closeLid() {
+  Serial.println("Closing Lid...");
+  lidServo.write(0);
+  delay(1000);
 }

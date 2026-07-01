@@ -13,6 +13,8 @@ class RedemptionHistoryScreen extends StatefulWidget {
 class _RedemptionHistoryScreenState extends State<RedemptionHistoryScreen> {
   bool _isLoading = true;
   List<dynamic> _history = [];
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   @override
   void initState() {
@@ -22,7 +24,7 @@ class _RedemptionHistoryScreenState extends State<RedemptionHistoryScreen> {
 
   Future<void> _loadHistory() async {
     final rp = context.read<RewardsProvider>();
-    final history = await rp.fetchRedemptionHistory();
+    final history = await rp.fetchRedemptionHistory(startDate: _startDate, endDate: _endDate);
     if (mounted) {
       setState(() {
         _history = history;
@@ -68,6 +70,34 @@ class _RedemptionHistoryScreenState extends State<RedemptionHistoryScreen> {
         backgroundColor: theme.scaffoldBackgroundColor,
         elevation: 0,
         centerTitle: true,
+        actions: [
+          IconButton(
+            icon: Icon(Icons.calendar_month, color: theme.primaryColor),
+            onPressed: () async {
+              final pickedRange = await showDateRangePicker(
+                context: context,
+                firstDate: DateTime(2020),
+                lastDate: DateTime.now(),
+                initialDateRange: _startDate != null && _endDate != null ? DateTimeRange(start: _startDate!, end: _endDate!) : null,
+              );
+              if (pickedRange != null) {
+                setState(() {
+                  _startDate = pickedRange.start;
+                  _endDate = pickedRange.end.add(const Duration(hours: 23, minutes: 59, seconds: 59));
+                  _isLoading = true;
+                });
+                _loadHistory();
+              } else {
+                setState(() {
+                  _startDate = null;
+                  _endDate = null;
+                  _isLoading = true;
+                });
+                _loadHistory();
+              }
+            },
+          ),
+        ],
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -82,17 +112,36 @@ class _RedemptionHistoryScreenState extends State<RedemptionHistoryScreen> {
                     ],
                   ),
                 )
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: _history.length,
-                  itemBuilder: (context, index) {
-                    final item = _history[index];
+              : Builder(builder: (context) {
+                  var filteredHistory = _history;
+
+                  
+                  if (filteredHistory.isEmpty) {
+                    return Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.history, size: 80, color: Colors.grey.shade400),
+                          const SizedBox(height: 16),
+                          Text('no_history'.tr(), style: TextStyle(color: Colors.grey.shade600, fontSize: 18)),
+                        ],
+                      ),
+                    );
+                  }
+
+                  return ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: filteredHistory.length,
+                    itemBuilder: (context, index) {
+                      final item = filteredHistory[index];
                     final dateStr = item['redeemed_at'] ?? '';
                     String formattedDate = '';
                     if (dateStr.isNotEmpty) {
                       try {
-                        final parsed = DateTime.parse(dateStr);
-                        formattedDate = DateFormat('MMM d, yyyy - h:mm a').format(parsed);
+                        // Parse as UTC and convert explicitly to local time (Egypt Time)
+                        final parsedUtc = DateTime.parse(dateStr).toUtc();
+                        final localTime = parsedUtc.toLocal();
+                        formattedDate = DateFormat('yyyy-MM-dd | hh:mm a').format(localTime);
                       } catch (_) {}
                     }
                     
@@ -155,7 +204,8 @@ class _RedemptionHistoryScreenState extends State<RedemptionHistoryScreen> {
                       ),
                     );
                   },
-                ),
+                );
+              }),
     );
   }
 }

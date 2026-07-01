@@ -25,6 +25,7 @@
 #define STEP_PIN 2
 #define DIR_PIN 15
 #define ENABLE_PIN 13
+#define SERVO_PIN 19
 
 #define BUTTON_PIN 12
 

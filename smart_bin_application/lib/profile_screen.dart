@@ -128,12 +128,23 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         borderRadius: BorderRadius.circular(20),
                         boxShadow: [BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 15, offset: const Offset(0, 5))],
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      child: Column(
                         children: [
-                          _buildStatCard(secondaryColor, primaryColor, Icons.military_tech_outlined, '${userProvider.currentBalance}', 'points'.tr(), theme),
-                          _buildStatCard(theme.brightness == Brightness.dark ? Colors.purple.shade900.withValues(alpha: 0.3) : Colors.purple.shade50, Colors.purple.shade300, Icons.check_box_outlined, '${userProvider.deposits}', 'deposits'.tr(), theme),
-                          _buildStatCard(theme.brightness == Brightness.dark ? Colors.blue.shade900.withValues(alpha: 0.3) : Colors.blue.shade50, Colors.blue.shade400, Icons.bolt_outlined, userProvider.totalWeight.toStringAsFixed(1), 'kg_recycled'.tr(), theme),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildStatCard(secondaryColor, primaryColor, Icons.military_tech_outlined, '${userProvider.currentBalance}', 'points'.tr(), theme),
+                              _buildStatCard(theme.brightness == Brightness.dark ? Colors.purple.shade900.withValues(alpha: 0.3) : Colors.purple.shade50, Colors.purple.shade300, Icons.check_box_outlined, '${userProvider.deposits}', 'deposits'.tr(), theme),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _buildStatCard(theme.brightness == Brightness.dark ? Colors.blue.shade900.withValues(alpha: 0.3) : Colors.blue.shade50, Colors.blue.shade400, Icons.recycling_outlined, userProvider.totalWeight.toStringAsFixed(1), 'kg_recycled'.tr(), theme),
+                              _buildStatCard(theme.brightness == Brightness.dark ? Colors.teal.shade900.withValues(alpha: 0.3) : Colors.teal.shade50, Colors.teal.shade500, Icons.energy_savings_leaf_outlined, userProvider.co2Saved.toStringAsFixed(1), 'co2_saved'.tr(), theme),
+                            ],
+                          ),
                         ],
                       ),
                     ),

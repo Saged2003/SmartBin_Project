@@ -26,7 +26,7 @@ class ProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = Profile
         fields = '__all__'
-        read_only_fields = ['user', 'points', 'milestone_points', 'premium_unlocked', 'streak_count', 'last_activity_date', 'weight', 'co2_saved', 'deposits']
+        read_only_fields = ['user', 'points', 'premium_unlocked', 'weight', 'co2_saved', 'deposits']
 
 
 class BinSerializer(serializers.ModelSerializer):

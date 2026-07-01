@@ -7,14 +7,13 @@ def create_admin_user(sender, **kwargs):
     from api.models import Profile
     try:
         username = os.environ.get('ROOT_ADMIN_USER', 'super_admin')
-        email = os.environ.get('ROOT_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+        email = os.environ.get('ROOT_ADMIN_EMAIL', 'admin@smartbin.com')
         password = os.environ.get('ROOT_ADMIN_PASS', 'Admin@12345')
         if not User.objects.filter(username=username).exists():
             user = User.objects.create_superuser(username, email, password)
             Profile.objects.create(
                 user=user,
                 points=0,
-                milestone_points=0,
                 weight=0.0,
                 co2_saved=0.0,
                 deposits=0,

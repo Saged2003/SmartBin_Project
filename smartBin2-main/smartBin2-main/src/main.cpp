@@ -6,12 +6,18 @@
 #include <ArduinoOTA.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
+#include <BLEDevice.h>
+#include <BLE2902.h>
 
-
+bool TEST_MODE = false;
 const char *ssid = "YOUR_WIFI_SSID";
 const char *password = "YOUR_WIFI_PASSWORD";
-const char *mqtt_server = "YOUR_HOST_IPV4";
+
+
+const char *mqtt_host = "192.168.1.100";
 const int mqtt_port = 1883;
+const char *mqtt_user = "smartbin";
+const char *mqtt_password = "smartbin123";
 
 String BIN_ID = "BIN-01";
 String HARDWARE_TOKEN = "secret-token-123";
@@ -26,25 +32,32 @@ BLEManager bleManager;
 bool needsNewQR = true;
 unsigned long lastWifiCheck = 0;
 unsigned long lastReconnectAttempt = 0;
+unsigned long lastMockTime = 0;
 
 void setup_wifi() {
   delay(10);
-  Serial.println();
-  Serial.print("Connecting to ");
+  Serial.println("\n--- Starting WiFi Setup ---");
+  Serial.print("Connecting to: ");
   Serial.println(ssid);
+  
+  WiFi.mode(WIFI_STA);
   WiFi.begin(ssid, password);
-  unsigned long wifiTimeout = millis();
-  while (WiFi.status() != WL_CONNECTED) {
+  
+  int attempts = 0;
+  while (WiFi.status() != WL_CONNECTED && attempts < 30) {
     delay(500);
     Serial.print(".");
-    if (millis() - wifiTimeout > 15000) {
-      Serial.println("\nWiFi connection timeout");
-      return;
-    }
+    attempts++;
   }
-  Serial.println("\nWiFi connected");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.println("\nWiFi connected!");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  } else {
+    Serial.println("\nWiFi Failed! Status Code: ");
+    Serial.println(WiFi.status());
+  }
 }
 
 void callback(char *topic, byte *payload, unsigned int length) {
@@ -81,7 +94,7 @@ void reconnect() {
   if (millis() - lastReconnectAttempt > 5000) {
     lastReconnectAttempt = millis();
     Serial.print("Attempting MQTT connection...");
-    if (client.connect(BIN_ID.c_str())) {
+    if (client.connect(BIN_ID.c_str(), mqtt_user, mqtt_password)) {
       Serial.println("connected");
 
       String qrTopic = "smartbin/" + BIN_ID + "/qr_code";
@@ -110,17 +123,18 @@ void setup() {
   bleManager.init(BIN_ID);
 
   setup_wifi();
-
+  
   ArduinoOTA.setHostname(BIN_ID.c_str());
   ArduinoOTA.begin();
 
-  client.setServer(mqtt_server, mqtt_port);
+  client.setServer(mqtt_host, mqtt_port);
   client.setCallback(callback);
 
   Serial.println(">>> ESP32-S3 IoT Gateway Ready <<<");
 }
 
 void loop() {
+  app.run();
   unsigned long now = millis();
 
   if (WiFi.status() == WL_CONNECTED) {
@@ -129,6 +143,21 @@ void loop() {
       reconnect();
     }
     client.loop();
+
+
+    if (TEST_MODE && client.connected() && (now - lastMockTime > 10000)) {
+      lastMockTime = now;
+      String topic = "smartbin/" + BIN_ID + "/update";
+      String payload = "{\"hardware_token\":\"" + HARDWARE_TOKEN + "\",\"capacity\":50.0}";
+      client.publish(topic.c_str(), payload.c_str());
+      
+      Serial.print("[TEST MODE] Publishing mock update to ");
+      Serial.print(topic);
+      Serial.print(": ");
+      Serial.println(payload);
+    }
+
+
   } else if (now - lastWifiCheck > 30000) {
     lastWifiCheck = now;
     setup_wifi();

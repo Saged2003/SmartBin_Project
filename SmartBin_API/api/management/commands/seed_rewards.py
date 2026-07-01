@@ -16,7 +16,6 @@ class Command(BaseCommand):
             # Cafe
             {
                 "name": "Free Medium Coffee",
-                "subtitle": "Starbucks",
                 "category": "Cafe",
                 "icon_category": "cafe",
                 "description": "Redeem this voucher for any medium coffee of your choice at participating Starbucks locations.",
@@ -29,7 +28,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "20% Off Pastries",
-                "subtitle": "Costa Coffee",
                 "category": "Cafe",
                 "icon_category": "cafe",
                 "description": "Get a 20% discount on any fresh pastry or baked good.",
@@ -43,7 +41,6 @@ class Command(BaseCommand):
             # Restaurant
             {
                 "name": "Free Burger Meal",
-                "subtitle": "Burger King",
                 "category": "Restaurant",
                 "icon_category": "restaurant",
                 "description": "Enjoy a free Whopper meal with fries and a drink.",
@@ -56,7 +53,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "15% Off Total Bill",
-                "subtitle": "KFC",
                 "category": "Restaurant",
                 "icon_category": "restaurant",
                 "description": "Apply a 15% discount to your entire order at KFC.",
@@ -70,7 +66,6 @@ class Command(BaseCommand):
             # Telecom
             {
                 "name": "1GB Mobile Data",
-                "subtitle": "Vodafone",
                 "category": "Telecom",
                 "icon_category": "telecom",
                 "description": "Add 1GB of high-speed mobile data to your current plan.",
@@ -83,7 +78,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "100 Free Minutes",
-                "subtitle": "Orange",
                 "category": "Telecom",
                 "icon_category": "telecom",
                 "description": "Get 100 free local minutes valid for 7 days.",
@@ -97,7 +91,6 @@ class Command(BaseCommand):
             # Retail
             {
                 "name": "25% Off Adidas Shoes",
-                "subtitle": "Adidas Store",
                 "category": "Retail",
                 "icon_category": "retail",
                 "description": "Exclusive discount on all running shoes at official retail locations.",
@@ -110,7 +103,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "$10 Amazon Gift Card",
-                "subtitle": "Amazon",
                 "category": "Retail",
                 "icon_category": "retail",
                 "description": "A $10 digital gift card applied directly to your Amazon account.",
@@ -124,7 +116,6 @@ class Command(BaseCommand):
             # Grocery
             {
                 "name": "Free Eco-friendly Bag",
-                "subtitle": "Carrefour",
                 "category": "Grocery",
                 "icon_category": "grocery",
                 "description": "Redeem a reusable, durable eco-friendly shopping bag.",
@@ -137,7 +128,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "10% Off Fresh Produce",
-                "subtitle": "Spinneys",
                 "category": "Grocery",
                 "icon_category": "grocery",
                 "description": "Get a 10% discount on all fresh vegetables and fruits.",
@@ -151,7 +141,6 @@ class Command(BaseCommand):
             # Cash / Vouchers
             {
                 "name": "$5 PayPal Cash",
-                "subtitle": "PayPal",
                 "category": "Cash",
                 "icon_category": "cash",
                 "description": "Receive $5 directly into your linked PayPal account.",
@@ -164,7 +153,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "$20 Visa Prepaid Card",
-                "subtitle": "Visa",
                 "category": "Cash",
                 "icon_category": "cash",
                 "description": "A digital prepaid card loaded with $20 for online shopping.",
@@ -178,7 +166,6 @@ class Command(BaseCommand):
             # Entertainment
             {
                 "name": "1 Free Movie Ticket",
-                "subtitle": "Vox Cinemas",
                 "category": "Entertainment",
                 "icon_category": "entertainment",
                 "description": "Enjoy any standard 2D movie screening for free.",
@@ -191,7 +178,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "1 Month Spotify Premium",
-                "subtitle": "Spotify",
                 "category": "Entertainment",
                 "icon_category": "entertainment",
                 "description": "Unlock ad-free music listening with 1 month of Spotify Premium.",
@@ -205,7 +191,6 @@ class Command(BaseCommand):
             # Premium Exclusives
             {
                 "name": "VIP Spa Day Access",
-                "subtitle": "Luxury Spa",
                 "category": "Premium",
                 "icon_category": "premium",
                 "description": "Exclusive VIP access to luxury spa facilities including massage and sauna.",
@@ -219,7 +204,6 @@ class Command(BaseCommand):
             },
             {
                 "name": "Exclusive Flight Upgrade",
-                "subtitle": "Emirates Airlines",
                 "category": "Premium",
                 "icon_category": "premium",
                 "description": "Upgrade your economy seat to Business Class on any short-haul flight.",

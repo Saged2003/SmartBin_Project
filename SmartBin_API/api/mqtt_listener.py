@@ -8,12 +8,14 @@ django.setup()
 
 import paho.mqtt.client as mqtt
 from django.conf import settings
-from api.views import verify_hardware_token, broadcast_bin_update, send_fcm_notification, calculate_co2_saved
+from api.views import verify_hardware_token, broadcast_bin_update
 from api.models import Bin, Profile, Activity
 from django.contrib.auth.models import User
 from django.utils import timezone
 from django.db import transaction
 
+
+from django.core.cache import cache
 
 def handle_capacity_update(bin_id, payload):
     try:
@@ -21,24 +23,27 @@ def handle_capacity_update(bin_id, payload):
         hardware_token = data.get('hardware_token', '')
         capacity = float(data.get('capacity', 0.0))
 
-        bin_obj = Bin.objects.get(bin_id=bin_id)
-        if not verify_hardware_token(bin_obj, hardware_token):
+        cached_token = cache.get(f"bin_{bin_id}_hw_token")
+        if cached_token is None:
+            bin_obj = Bin.objects.filter(bin_id=bin_id).first()
+            if not bin_obj:
+                return
+            cached_token = bin_obj.hardware_token or "NONE"
+            cache.set(f"bin_{bin_id}_hw_token", cached_token, timeout=3600)
+        
+        if cached_token != "NONE" and cached_token != hardware_token:
             return
 
-        bin_obj.capacity = capacity
+        crowd_level = 'Low Crowd'
         if capacity >= 80:
-            bin_obj.crowd_level = 'High Crowd'
+            crowd_level = 'High Crowd'
         elif capacity >= 50:
-            bin_obj.crowd_level = 'Medium Crowd'
-        else:
-            bin_obj.crowd_level = 'Low Crowd'
-        bin_obj.save()
+            crowd_level = 'Medium Crowd'
+            
+        cache.set(f"bin_{bin_id}_capacity", capacity, timeout=3600)
+        cache.set(f"bin_{bin_id}_crowd_level", crowd_level, timeout=3600)
 
-        if capacity >= 90.0:
-            employee_profiles = Profile.objects.filter(is_employee=True, is_approved_employee=True)
-            for emp in employee_profiles:
-                if emp.fcm_token:
-                    send_fcm_notification(emp.fcm_token, "Bin Full Alert", f"Bin {bin_id} has reached {capacity}% capacity and needs collection.")
+        # Broadcast map update - can pull from cache in views
         broadcast_bin_update()
     except Exception:
         pass
@@ -48,10 +53,6 @@ def handle_session_end(bin_id, payload):
     try:
         data = json.loads(payload)
         hardware_token = data.get('hardware_token', '')
-        points = int(data.get('points', 0))
-        weight = float(data.get('weight', 0.0))
-        material_type = data.get('material_type', 'plastic').lower()
-
         bin_obj = Bin.objects.get(bin_id=bin_id)
         if not verify_hardware_token(bin_obj, hardware_token):
             return
@@ -61,45 +62,28 @@ def handle_session_end(bin_id, payload):
             with transaction.atomic():
                 profile, created = Profile.objects.select_for_update().get_or_create(user=user)
 
-                from datetime import timedelta
-                now_date = timezone.now().date()
-                streak_multiplier = 1.0
-
-                if profile.last_activity_date:
-                    if profile.last_activity_date == now_date - timedelta(days=1):
-                        profile.streak_count += 1
-                    elif profile.last_activity_date < now_date - timedelta(days=1):
-                        profile.streak_count = 1
-                else:
-                    profile.streak_count = 1
-
-                profile.last_activity_date = now_date
-
-                if profile.streak_count >= 7:
-                    streak_multiplier = 2.0
-                elif profile.streak_count >= 3:
-                    streak_multiplier = 1.5
-
-                final_points = int(points * streak_multiplier)
-
-                profile.points += final_points
-                profile.milestone_points += final_points
-                profile.weight += weight
-                profile.deposits += 1
-                saved_co2 = calculate_co2_saved(weight, material_type)
-                profile.co2_saved += saved_co2
-
-                while profile.milestone_points >= 1000:
-                    profile.premium_unlocked = True
-                    profile.milestone_points -= 1000
-                    if profile.fcm_token:
-                        send_fcm_notification(profile.fcm_token, "Premium Unlocked!", "Congratulations! You reached 1000 points and unlocked Premium Rewards.")
-                profile.save()
-                Activity.objects.create(user=user, points=final_points, weight=weight, co2_saved_in_activity=saved_co2, material_type=material_type)
+                weight_g = float(data.get('weight_g', data.get('weight', 0.0)))
+                is_metal_str = data.get('is_metal')
+                is_metal = str(is_metal_str).lower() == 'true' if is_metal_str is not None else None
+                material_type = data.get('material', data.get('material_type'))
+                
+                if material_type is not None:
+                    material_type = material_type.lower()
+                
+                from api.services import process_deposit_payload
+                process_deposit_payload(profile, weight_g, is_metal=is_metal, material_type=material_type)
 
         bin_obj.status = 'idle'
         bin_obj.current_user = None
         bin_obj.current_qr_code = None
+        
+        cached_capacity = cache.get(f"bin_{bin_id}_capacity")
+        cached_crowd_level = cache.get(f"bin_{bin_id}_crowd_level")
+        if cached_capacity is not None:
+            bin_obj.capacity = cached_capacity
+        if cached_crowd_level is not None:
+            bin_obj.crowd_level = cached_crowd_level
+            
         bin_obj.save()
         broadcast_bin_update()
     except Exception:
@@ -129,6 +113,7 @@ def handle_qr_request(client, bin_id, payload):
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
+    print("Connected to MQTT broker successfully!")
     client.subscribe("smartbin/+/update")
     client.subscribe("smartbin/+/capacity")
     client.subscribe("smartbin/+/session_end")
@@ -153,21 +138,28 @@ def on_message(client, userdata, msg):
 
 
 def run():
-    broker_url = getattr(settings, 'MQTT_BROKER_URL', '127.0.0.1')
-    broker_port = int(getattr(settings, 'MQTT_BROKER_PORT', 1883))
+    import uuid
+    broker_url = getattr(settings, 'MQTT_HOST', '127.0.0.1')
+    broker_port = int(getattr(settings, 'MQTT_PORT', 1883))
+    broker_user = getattr(settings, 'MQTT_USER', 'smartbin')
+    broker_password = getattr(settings, 'MQTT_PASSWORD', 'smartbin123')
 
-    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id="django_mqtt_listener")
+    client_id = f"django_mqtt_listener_{uuid.uuid4().hex[:8]}"
+    print(f"Starting MQTT listener. Broker: {broker_url}:{broker_port} | Client ID: {client_id}")
+    
+    client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=client_id)
+    if broker_user:
+        client.username_pw_set(broker_user, broker_password)
+    if broker_port == 8883:
+        client.tls_set()
     client.on_connect = on_connect
     client.on_message = on_message
 
-    backoff = 1
-    while True:
-        try:
-            client.connect(broker_url, broker_port, 60)
-            client.loop_forever()
-        except Exception:
-            time.sleep(min(backoff, 30))
-            backoff = min(backoff * 2, 30)
+    print(f"Attempting to connect to {broker_url}:{broker_port}...")
+    client.connect(broker_url, broker_port, 60)
+    
+    # loop_forever() handles reconnections automatically
+    client.loop_forever()
 
 
 if __name__ == '__main__':

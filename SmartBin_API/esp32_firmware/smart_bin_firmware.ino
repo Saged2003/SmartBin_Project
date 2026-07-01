@@ -7,11 +7,14 @@
 #include <ArduinoJson.h>
 #include <Update.h>
 #include <HTTPClient.h>
+#include <WiFiClientSecure.h>
 const char* ssid = "YOUR_WIFI_SSID";
 const char* password = "YOUR_WIFI_PASSWORD";
-const char* mqtt_server = "192.168.43.219"; 
-const int mqtt_port = 1883;
-WiFiClient espClient;
+const char* mqtt_host = "YOUR_CLOUD_BROKER_URL"; 
+const int mqtt_port = 8883;
+const char* mqtt_user = "YOUR_MQTT_USER";
+const char* mqtt_password = "YOUR_MQTT_PASSWORD";
+WiFiClientSecure espClient;
 PubSubClient client(espClient);
 #define BIN_ID "BIN-001"
 #define HARDWARE_TOKEN "SECURE_TOKEN_123"
@@ -50,7 +53,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
 void reconnect() {
   while (!client.connected()) {
     Serial.print("Attempting MQTT connection...");
-    if (client.connect(BIN_ID)) {
+    if (client.connect(BIN_ID, mqtt_user, mqtt_password)) {
       Serial.println("connected");
       client.subscribe("smartbin/BIN-001/command");
     } else {
@@ -98,7 +101,8 @@ void setup() {
     wifiAttempts++;
   }
   if (WiFi.status() == WL_CONNECTED) {
-    client.setServer(mqtt_server, mqtt_port);
+    espClient.setInsecure();
+    client.setServer(mqtt_host, mqtt_port);
     client.setCallback(callback);
     reconnect();
   } else {

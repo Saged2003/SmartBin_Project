@@ -1,4 +1,6 @@
 #include "NetworkManager.h"
+#include <WiFi.h>
+#include <math.h>
 
 NetworkManager::NetworkManager(String url, String id, String identToken) {
   baseUrl = url;
@@ -75,16 +77,21 @@ bool NetworkManager::updateCapacity(float capacity) {
   return (httpResponseCode == 200);
 }
 
-bool NetworkManager::endSession(int points, float weight) {
+bool NetworkManager::endSession(int points, float weight, String materialType) {
   if (WiFi.status() != WL_CONNECTED)
     return false;
   HTTPClient http;
   http.begin(baseUrl + "/api/esp/end-session/");
   http.addHeader("Content-Type", "application/json");
 
+  float factor = (materialType == "metal") ? 2.0 : 1.5;
+  float co2Saved = weight * factor * (1.0 + 0.05 * log10(weight + 1.0));
+
   String requestBody = "{\"bin_id\":\"" + binId + "\",\"hardware_token\":\"" +
                        token + "\",\"points\":" + String(points) +
-                       ",\"weight\":" + String(weight) + "}";
+                       ",\"weight\":" + String(weight) + 
+                       ",\"material_type\":\"" + materialType + "\"" +
+                       ",\"co2_saved\":" + String(co2Saved) + "}";
   int httpResponseCode = http.POST(requestBody);
   http.end();
   return (httpResponseCode == 200);

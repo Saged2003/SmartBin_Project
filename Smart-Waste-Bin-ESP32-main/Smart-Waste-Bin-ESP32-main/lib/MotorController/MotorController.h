@@ -3,6 +3,7 @@
 
 #include <AccelStepper.h>
 #include <Arduino.h>
+#include <ESP32Servo.h>
 
 
 class MotorController {
@@ -14,6 +15,11 @@ public:
   bool resetToCenter();
 
   bool runToPosition();
+  
+  void openLid();
+  void closeLid();
+private:
+  Servo lidServo;
 };
 
 #endif

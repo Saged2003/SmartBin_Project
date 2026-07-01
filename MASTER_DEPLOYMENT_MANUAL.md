@@ -11,7 +11,7 @@ The system relies on four interconnected components that communicate over standa
 
 ## 2. Pre-flight & Network Unity
 To ensure seamless communication, all components must reside on the same local area network without isolation.
-1. **Connect Host PC and ESP32s** to the same 2.4GHz WiFi network (e.g., `Roqaya`).
+1. **Connect Host PC and ESP32s** to the same 2.4GHz WiFi network (e.g., `YOUR_WIFI_SSID`).
 2. **Disable AP-Isolation** (Client Isolation) on your router to allow devices to discover each other.
 3. **Extract Host IPv4:**
    - On Windows, open PowerShell and type: `ipconfig`

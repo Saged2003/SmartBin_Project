@@ -13,16 +13,18 @@ class ActivityScreen extends StatefulWidget {
 
 class _ActivityScreenState extends State<ActivityScreen> {
   final ScrollController _scrollController = ScrollController();
+  DateTime? _startDate;
+  DateTime? _endDate;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      context.read<UserProvider>().fetchActivities(loadMore: false);
+      context.read<UserProvider>().fetchActivities(loadMore: false, startDate: _startDate, endDate: _endDate);
     });
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 50) {
-        context.read<UserProvider>().fetchActivities(loadMore: true);
+        context.read<UserProvider>().fetchActivities(loadMore: true, startDate: _startDate, endDate: _endDate);
       }
     });
   }
@@ -33,14 +35,13 @@ class _ActivityScreenState extends State<ActivityScreen> {
     super.dispose();
   }
 
-  String _getImage(String type) {
+  IconData _getIcon(String type) {
     String typeString = type.toLowerCase();
-    if(typeString.contains('plastic')) return 'lib/assets/images/plastic_bottle.png';
-    if(typeString.contains('aluminum')) return 'lib/assets/images/aluminum_can.png';
-    if(typeString.contains('glass')) return 'lib/assets/images/glass_bottle.png';
-    if(typeString.contains('cardboard')) return 'lib/assets/images/cardboard_box.png';
-    if(typeString.contains('newspaper')) return 'lib/assets/images/newspaper.png';
-    return 'lib/assets/images/plastic_bottle.png';
+    if (typeString.contains('plastic')) return Icons.local_drink_outlined;
+    if (typeString.contains('aluminum')) return Icons.change_history;
+    if (typeString.contains('glass')) return Icons.wine_bar;
+    if (typeString.contains('cardboard')) return Icons.inventory_2_outlined;
+    return Icons.recycling;
   }
 
   Widget _buildShimmerEffect(ThemeData theme) {
@@ -76,7 +77,35 @@ class _ActivityScreenState extends State<ActivityScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text('activity_history'.tr(), style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900, color: primaryColor)),
-                  if (userProvider.isOffline) const Icon(Icons.cloud_off, color: Colors.orange),
+                  Row(
+                    children: [
+                      IconButton(
+                        icon: Icon(Icons.calendar_month, color: primaryColor),
+                        onPressed: () async {
+                          final pickedRange = await showDateRangePicker(
+                            context: context,
+                            firstDate: DateTime(2020),
+                            lastDate: DateTime.now(),
+                            initialDateRange: _startDate != null && _endDate != null ? DateTimeRange(start: _startDate!, end: _endDate!) : null,
+                          );
+                          if (pickedRange != null) {
+                            setState(() {
+                              _startDate = pickedRange.start;
+                              _endDate = pickedRange.end.add(const Duration(hours: 23, minutes: 59, seconds: 59));
+                            });
+                            context.read<UserProvider>().fetchActivities(loadMore: false, startDate: _startDate, endDate: _endDate);
+                          } else {
+                            setState(() {
+                              _startDate = null;
+                              _endDate = null;
+                            });
+                            context.read<UserProvider>().fetchActivities(loadMore: false, startDate: _startDate, endDate: _endDate);
+                          }
+                        },
+                      ),
+                      if (userProvider.isOffline) const Icon(Icons.cloud_off, color: Colors.orange),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 4),
@@ -142,22 +171,29 @@ class _ActivityScreenState extends State<ActivityScreen> {
                           await ApiService().validateSession();
                           await userProvider.fetchActivities(loadMore: false);
                         },
-                        child: ListView.builder(
-                          controller: _scrollController,
-                          physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                          itemCount: userProvider.recentActivities.length + (userProvider.hasMoreActivities ? 1 : 0),
-                          itemBuilder: (context, index) {
-                            if (index == userProvider.recentActivities.length) {
-                              return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()));
-                            }
-                            var activity = userProvider.recentActivities[index];
+                        child: Builder(builder: (context) {
+                          var filteredActivities = userProvider.recentActivities;
+
+                          return ListView.builder(
+                            controller: _scrollController,
+                            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                            itemCount: filteredActivities.length + (userProvider.hasMoreActivities ? 1 : 0),
+                            itemBuilder: (context, index) {
+                              if (index == filteredActivities.length) {
+                                return const Center(child: Padding(padding: EdgeInsets.all(8.0), child: CircularProgressIndicator()));
+                              }
+                              var activity = filteredActivities[index];
                             return Container(
                               margin: const EdgeInsets.only(bottom: 12),
                               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
                               decoration: BoxDecoration(color: secondaryColor, borderRadius: BorderRadius.circular(20)),
                               child: Row(
                                 children: [
-                                  Image.asset(_getImage(activity['t'] ?? 'plastic'), width: 40, height: 40, errorBuilder: (context, error, stackTrace) => const Icon(Icons.recycling, size: 40)),
+                                  Container(
+                                    padding: const EdgeInsets.all(8),
+                                    decoration: BoxDecoration(color: theme.colorScheme.surface, shape: BoxShape.circle),
+                                    child: Icon(_getIcon(activity['t'] ?? 'plastic'), color: primaryColor, size: 24),
+                                  ),
                                   const SizedBox(width: 16),
                                   Expanded(
                                     child: Column(
@@ -175,13 +211,22 @@ class _ActivityScreenState extends State<ActivityScreen> {
                                       Text('+${activity['points'] ?? 0} ${'pts'.tr()}', style: TextStyle(fontWeight: FontWeight.bold, color: primaryColor, fontSize: 15)),
                                       const SizedBox(height: 4),
                                       Text('${activity['weight'] ?? 0.0} ${'kg'.tr()}', style: const TextStyle(color: Colors.grey, fontSize: 13)),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Icon(Icons.energy_savings_leaf, color: Colors.teal.shade400, size: 14),
+                                          const SizedBox(width: 4),
+                                          Text('${(activity['co2_saved_in_activity'] ?? 0.0).toStringAsFixed(2)} g', style: TextStyle(color: Colors.teal.shade600, fontSize: 12, fontWeight: FontWeight.bold)),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ],
                               ),
                             );
                           },
-                        ),
+                        );
+                        }),
                       ),
               ),
             ],

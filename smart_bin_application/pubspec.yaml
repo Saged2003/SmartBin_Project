@@ -29,6 +29,9 @@ dependencies:
   firebase_messaging: ^16.4.1
   hive: ^2.2.3
   hive_flutter: ^1.1.0
+  web_socket_channel: 3.0.3
+  crypto: ^3.0.3
+  workmanager: ^0.5.2
 
 dev_dependencies:
   flutter_test:

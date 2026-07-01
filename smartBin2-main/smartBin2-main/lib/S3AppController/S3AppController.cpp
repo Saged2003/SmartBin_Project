@@ -2,6 +2,9 @@
 #include "../../include/BLEManager.h"
 #include "../../include/Config.h"
 #include <PubSubClient.h>
+#include <BLEDevice.h>
+#include <BLE2902.h>
+#include <math.h>
 
 
 extern DisplayManager display;
@@ -33,7 +36,7 @@ void S3AppController::receiveBackendCommand(String cmd) {
     display.drawQRCode(qrData);
     display.showMessage("Scan to Start");
     currentState = STATE_IDLE;
-  } else if (cmd == "START_BIN" && currentState == STATE_IDLE) {
+  } else if ((cmd == "START_BIN" || cmd == "OPEN_BIN") && isIdle()) {
     Serial1.println("start");
     drawSessionScreen();
     currentState = STATE_SESSION;
@@ -94,7 +97,13 @@ void S3AppController::run() {
               bleManager.queueOfflineData(outPayload);
             }
           } else if (req == "end") {
-            earnedPoints = doc["pts"];
+            String materialType = (lastType == 2) ? "metal" : "plastic";
+            float pointsPerG = (lastType == 2) ? 0.15 : 0.10;
+            float co2PerG = (lastType == 2) ? 0.0095 : 0.0015;
+            
+            earnedPoints = round(lastTotalWeight * pointsPerG);
+            float co2Saved = lastTotalWeight * co2PerG;
+
             drawScoreScreen(earnedPoints);
 
             String endTopic = "smartbin/" + BIN_ID + "/session_end";
@@ -102,7 +111,8 @@ void S3AppController::run() {
             endDoc["hardware_token"] = HARDWARE_TOKEN;
             endDoc["points"] = earnedPoints;
             endDoc["weight"] = lastTotalWeight;
-            endDoc["material_type"] = (lastType == 2) ? "metal" : "plastic";
+            endDoc["material_type"] = materialType;
+            endDoc["co2_saved"] = co2Saved;
             String endPayload;
             serializeJson(endDoc, endPayload);
             if (client.connected()) {

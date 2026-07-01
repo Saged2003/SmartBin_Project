@@ -9,6 +9,8 @@ import 'animated_button.dart';
 import 'scan_success_screen.dart';
 import 'api_service.dart';
 import 'theme.dart';
+import 'dart:async';
+import 'package:lottie/lottie.dart';
 
 class HomeTab extends StatefulWidget {
   final Widget? navigatorKey;
@@ -20,6 +22,7 @@ class HomeTab extends StatefulWidget {
 
 class _HomeTabState extends State<HomeTab> {
   final ScrollController _scrollController = ScrollController();
+  StreamSubscription? _wsSubscription;
 
   @override
   void initState() {
@@ -36,10 +39,40 @@ class _HomeTabState extends State<HomeTab> {
         context.read<UserProvider>().fetchActivities(loadMore: true);
       }
     });
+    _wsSubscription = context.read<UserProvider>().userStream.listen((data) {
+      if (mounted && (data['points_added'] ?? 0) > 0) {
+        _showCelebrationDialog(data['points_added']);
+      }
+    });
+  }
+
+  void _showCelebrationDialog(int pointsAdded) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        Future.delayed(const Duration(seconds: 3), () {
+          if (Navigator.of(context).canPop()) {
+            Navigator.of(context).pop();
+          }
+        });
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Lottie.asset('lib/assets/animations/celebration.json', width: 200, height: 200, repeat: false),
+              Text('+$pointsAdded Points!', style: const TextStyle(fontSize: 32, fontWeight: FontWeight.bold, color: Colors.white, shadows: [Shadow(color: Colors.black54, blurRadius: 10)])),
+            ],
+          ),
+        );
+      },
+    );
   }
 
   @override
   void dispose() {
+    _wsSubscription?.cancel();
     _scrollController.dispose();
     super.dispose();
   }
@@ -93,9 +126,9 @@ class _HomeTabState extends State<HomeTab> {
     final greyColor = theme.textTheme.bodyMedium?.color ?? Colors.grey;
 
     final userProvider = context.watch<UserProvider>();
-    int pointsLeft = 1000 - userProvider.milestonePoints;
+    int pointsLeft = 1000 - (userProvider.currentBalance % 1000);
     if (pointsLeft < 0) pointsLeft = 0;
-    double progress = (userProvider.milestonePoints / 1000).clamp(0.0, 1.0);
+    double progress = ((userProvider.currentBalance % 1000) / 1000).clamp(0.0, 1.0);
     String displayName = userProvider.fullName.isNotEmpty ? userProvider.fullName : userProvider.userName;
 
     return SafeArea(
@@ -120,7 +153,7 @@ class _HomeTabState extends State<HomeTab> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text('welcome'.tr(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: Color(0xFF006653))),
+                        Text('welcome'.tr(), style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF006653))),
                         const SizedBox(height: 4),
                         Text(displayName, style: TextStyle(fontSize: 32, fontWeight: FontWeight.w900, color: darkGreen), maxLines: 1, overflow: TextOverflow.ellipsis),
                       ],
@@ -142,16 +175,16 @@ class _HomeTabState extends State<HomeTab> {
                     width: double.infinity,
                     padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 40),
                     decoration: ShapeDecoration(
-                      color: theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32),
+                      color: const Color(0xFFBDE038),
                       shape: const StadiumBorder(),
-                      shadows: [BoxShadow(color: (theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32)).withValues(alpha: 0.5), blurRadius: 10, offset: const Offset(0, 4))],
+                      shadows: [BoxShadow(color: const Color(0xFFBDE038).withValues(alpha: 0.5), blurRadius: 10, offset: const Offset(0, 4))],
                     ),
                     child: Row(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
-                        const Icon(Icons.qr_code_scanner, color: Color(0xFF006653), size: 36),
+                        const Icon(Icons.qr_code_scanner, color: Color(0xFF184F35), size: 36),
                         const SizedBox(width: 16),
-                        Text('scanner'.tr(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF006653), letterSpacing: 0.5)),
+                        Text('scanner'.tr(), style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Color(0xFF184F35), letterSpacing: 0.5)),
                       ],
                     ),
                   ),
@@ -162,41 +195,51 @@ class _HomeTabState extends State<HomeTab> {
               const SizedBox(height: 12),
               AnimatedButton(
                 onTap: widget.onViewAll,
-                child: Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(24),
-                  decoration: BoxDecoration(color: darkGreen, borderRadius: BorderRadius.circular(24)),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
+                child: StreamBuilder<Map<String, dynamic>>(
+                  stream: userProvider.userStream,
+                  builder: (context, snapshot) {
+                    final currentPoints = snapshot.data?['points'] ?? userProvider.currentBalance;
+                    int ptsLeft = 1000 - (currentPoints % 1000) as int;
+                    if (ptsLeft < 0) ptsLeft = 0;
+                    double prog = ((currentPoints % 1000) / 1000).clamp(0.0, 1.0);
+
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(color: darkGreen, borderRadius: BorderRadius.circular(24)),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('${userProvider.currentBalance}', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white)),
-                          const SizedBox(width: 8),
-                          Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('points'.tr(), style: TextStyle(fontSize: 16, color: theme.brightness == Brightness.dark ? Colors.black54 : Colors.white70))),
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text('$currentPoints', style: TextStyle(fontSize: 42, fontWeight: FontWeight.bold, color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white)),
+                              const SizedBox(width: 8),
+                              Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('points'.tr(), style: TextStyle(fontSize: 16, color: theme.brightness == Brightness.dark ? Colors.black54 : Colors.white70))),
+                            ],
+                          ),
+                          const SizedBox(height: 24),
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('premium_progress'.tr(), style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black54 : Colors.white70, fontSize: 13)),
+                              Text('$ptsLeft ${'pts_left'.tr()}', style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: LinearProgressIndicator(
+                              value: prog,
+                              backgroundColor: theme.brightness == Brightness.dark ? Colors.black12 : Colors.white24,
+                              valueColor: AlwaysStoppedAnimation<Color>(theme.brightness == Brightness.dark ? Colors.white : const Color(0xFFE2F3E8)),
+                              minHeight: 8,
+                            ),
+                          ),
                         ],
                       ),
-                      const SizedBox(height: 24),
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text('premium_progress'.tr(), style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black54 : Colors.white70, fontSize: 13)),
-                          Text('$pointsLeft ${'pts_left'.tr()}', style: TextStyle(color: theme.brightness == Brightness.dark ? Colors.black87 : Colors.white, fontSize: 13, fontWeight: FontWeight.bold)),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(10),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          backgroundColor: theme.brightness == Brightness.dark ? Colors.black12 : Colors.white24,
-                          valueColor: AlwaysStoppedAnimation<Color>(accentGreen),
-                          minHeight: 8,
-                        ),
-                      ),
-                    ],
-                  ),
+                    );
+                  }
                 ),
               ),
               const SizedBox(height: 40),
@@ -209,11 +252,10 @@ class _HomeTabState extends State<HomeTab> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                       decoration: ShapeDecoration(
-                        color: theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32),
+                        color: darkGreen,
                         shape: const StadiumBorder(),
-                        shadows: [BoxShadow(color: (theme.brightness == Brightness.dark ? AppTheme.darkPrimaryColor : const Color(0xFF32CD32)).withValues(alpha: 0.3), blurRadius: 5, offset: const Offset(0, 2))],
                       ),
-                      child: Text('view_all'.tr(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.white)),
+                      child: Text('view_all'.tr(), style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFFBDE038))),
                     ),
                   ),
                 ],
@@ -257,6 +299,14 @@ class _HomeTabState extends State<HomeTab> {
                                       Text('+${activity["points"] ?? activity["v"] ?? 0} ${'pts'.tr()}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: darkGreen)),
                                       const SizedBox(height: 4),
                                       Text('${activity["weight"] ?? activity["w"] ?? 0.0} ${'kg'.tr()}', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500, color: greyColor)),
+                                      const SizedBox(height: 4),
+                                      Row(
+                                        children: [
+                                          Icon(Icons.energy_savings_leaf, color: Colors.teal.shade400, size: 14),
+                                          const SizedBox(width: 4),
+                                          Text('${(activity['co2_saved_in_activity'] ?? 0.0).toStringAsFixed(2)} g', style: TextStyle(color: Colors.teal.shade600, fontSize: 12, fontWeight: FontWeight.bold)),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 ],

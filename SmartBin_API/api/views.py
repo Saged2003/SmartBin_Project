@@ -24,6 +24,7 @@ from .models import Profile, Bin, Activity, Reward, RedeemedReward
 from .serializers import ActivitySerializer, RewardSerializer, BinSerializer, ProfileSerializer
 from channels.layers import get_channel_layer
 from asgiref.sync import async_to_sync
+from django.core.cache import cache
 
 
 def broadcast_bin_update():
@@ -37,23 +38,6 @@ def broadcast_bin_update():
                     "message": "update"
                 }
             )
-    except Exception:
-        pass
-
-
-def send_fcm_notification(token, title, body):
-    try:
-        if not firebase_admin._apps:
-            cred_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'firebase_admin_cert.json')
-            if os.path.exists(cred_path):
-                cred = credentials.Certificate(cred_path)
-                firebase_admin.initialize_app(cred)
-        if firebase_admin._apps:
-            message = messaging.Message(
-                notification=messaging.Notification(title=title, body=body),
-                token=token,
-            )
-            messaging.send(message)
     except Exception:
         pass
 
@@ -73,19 +57,6 @@ def verify_hardware_token(bin_obj, provided_token):
     return True
 
 
-def calculate_co2_saved(weight, material_type):
-    multipliers = {
-        'plastic': 1.5,
-        'glass': 0.3,
-        'paper': 0.9,
-        'metal': 2.0,
-        'cardboard': 0.9,
-        'aluminum': 2.0,
-    }
-    factor = multipliers.get(material_type, 1.0)
-    return weight * factor * (1.0 + 0.05 * math.log10(weight + 1.0))
-
-
 @api_view(['POST'])
 def register_user(request):
     username = request.data.get('username')
@@ -100,7 +71,7 @@ def register_user(request):
 
     user = User.objects.create_user(username=username, password=password, email=email)
     Profile.objects.create(
-        user=user, points=0, milestone_points=0, weight=0.0, co2_saved=0.0,
+        user=user, points=0, weight=0.0, co2_saved=0.0,
         deposits=0, is_employee=is_employee, is_approved_employee=False,
         full_name=full_name, phone=phone
     )
@@ -108,7 +79,7 @@ def register_user(request):
 
     if is_employee:
         try:
-            admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+            admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
             send_mail(
                 'New Employee Registration Request',
                 f'User {username} ({email}) requested to join as an employee.',
@@ -132,7 +103,7 @@ def register_user(request):
 @ratelimit(key='ip', rate='5/m', block=False)
 @api_view(['POST'])
 def login_user(request):
-    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
     username = request.data.get('username')
     is_root_admin = False
 
@@ -155,7 +126,6 @@ def login_user(request):
 
         if created_profile:
             profile.points = 0
-            profile.milestone_points = 0
             profile.weight = 0.0
             profile.co2_saved = 0.0
             profile.deposits = 0
@@ -181,7 +151,7 @@ def get_profile(request):
     username = request.query_params.get('username')
     try:
         user = User.objects.get(username=username)
-        admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+        admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
         request_is_root = (request.user.email == admin_email and request.user.is_superuser)
         if request.user.username != username and not request_is_root:
             return Response({'error': 'unauthorized'}, status=403)
@@ -191,7 +161,6 @@ def get_profile(request):
 
         return Response({
             'points': profile.points,
-            'milestone_points': profile.milestone_points,
             'premium_unlocked': profile.premium_unlocked,
             'weight': profile.weight,
             'co2_saved': round(profile.co2_saved, 2),
@@ -205,7 +174,6 @@ def get_profile(request):
             'is_root_admin': is_root_admin,
             'is_superuser': user.is_superuser,
             'is_staff': user.is_staff,
-            'streak_count': profile.streak_count,
             'profile_picture': profile.profile_picture.url if profile.profile_picture else None
         })
     except Exception:
@@ -247,7 +215,7 @@ def update_profile(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def approve_employee(request):
-    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
     if not (request.user.email == admin_email and request.user.is_superuser):
         return Response({'error': 'unauthorized'}, status=403)
 
@@ -299,7 +267,7 @@ def esp_get_code(request):
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
 def user_scan_qr(request):
-    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
     is_root_admin = (request.user.email == admin_email and request.user.is_superuser)
     if getattr(request, 'limited', False) and not is_root_admin:
         return Response({'error': 'Too many requests. Try again later.'}, status=429)
@@ -316,13 +284,17 @@ def user_scan_qr(request):
         bin_obj.save()
         broadcast_bin_update()
 
-        broker_url = getattr(settings, 'MQTT_BROKER_URL', '127.0.0.1')
-        broker_port = getattr(settings, 'MQTT_BROKER_PORT', 1883)
-        command_payload = json.dumps({"cmd": "START_BIN"})
+        broker_url = getattr(settings, 'MQTT_HOST', '127.0.0.1')
+        broker_port = getattr(settings, 'MQTT_PORT', 1883)
+        broker_user = getattr(settings, 'MQTT_USER', 'smartbin')
+        broker_password = getattr(settings, 'MQTT_PASSWORD', 'smartbin123')
+        command_payload = json.dumps({"cmd": "OPEN_BIN"})
         try:
-            publish.single(f"smartbin/{bin_obj.bin_id}/command", payload=command_payload, hostname=broker_url, port=int(broker_port))
-        except Exception:
-            pass
+            auth = {'username': broker_user, 'password': broker_password} if broker_user else None
+            tls = {'tls_version': 2} if int(broker_port) == 8883 else None # TLS enabled
+            publish.single(f"smartbin/{bin_obj.bin_id}/command", payload=command_payload, hostname=broker_url, port=int(broker_port), auth=auth, tls=tls)
+        except Exception as e:
+            print(f"MQTT Error in views: {e}")
         return Response({'message': 'scanned successfully'})
     except Bin.DoesNotExist:
         return Response({'error': 'invalid code'}, status=404)
@@ -380,45 +352,29 @@ def esp_end_session(request):
             with transaction.atomic():
                 profile, created = Profile.objects.select_for_update().get_or_create(user=user)
 
-                from datetime import timedelta
-                now_date = timezone.now().date()
-                streak_multiplier = 1.0
-
-                if profile.last_activity_date:
-                    if profile.last_activity_date == now_date - timedelta(days=1):
-                        profile.streak_count += 1
-                    elif profile.last_activity_date < now_date - timedelta(days=1):
-                        profile.streak_count = 1
-                else:
-                    profile.streak_count = 1
-
-                profile.last_activity_date = now_date
-
-                if profile.streak_count >= 7:
-                    streak_multiplier = 2.0
-                elif profile.streak_count >= 3:
-                    streak_multiplier = 1.5
-
-                final_points = int(points * streak_multiplier)
-
-                profile.points += final_points
-                profile.milestone_points += final_points
-                profile.weight += weight
-                profile.deposits += 1
-                saved_co2 = calculate_co2_saved(weight, material_type)
-                profile.co2_saved += saved_co2
-
-                while profile.milestone_points >= 1000:
-                    profile.premium_unlocked = True
-                    profile.milestone_points -= 1000
-                    if profile.fcm_token:
-                        send_fcm_notification(profile.fcm_token, "Premium Unlocked!", "Congratulations! You reached 1000 points and unlocked Premium Rewards.")
-                profile.save()
-                Activity.objects.create(user=user, points=final_points, weight=weight, co2_saved_in_activity=saved_co2, material_type=material_type)
+                weight_g = float(request.data.get('weight_g', request.data.get('weight', 0.0)))
+                is_metal_str = request.data.get('is_metal')
+                is_metal = str(is_metal_str).lower() == 'true' if is_metal_str is not None else None
+                material_type = request.data.get('material', request.data.get('material_type'))
+                
+                if material_type is not None:
+                    material_type = material_type.lower()
+                
+                from api.services import process_deposit_payload
+                process_deposit_payload(profile, weight_g, is_metal=is_metal, material_type=material_type)
 
         bin_obj.status = 'idle'
         bin_obj.current_user = None
         bin_obj.current_qr_code = None
+        
+        from django.core.cache import cache
+        cached_capacity = cache.get(f"bin_{bin_id}_capacity")
+        cached_crowd_level = cache.get(f"bin_{bin_id}_crowd_level")
+        if cached_capacity is not None:
+            bin_obj.capacity = cached_capacity
+        if cached_crowd_level is not None:
+            bin_obj.crowd_level = cached_crowd_level
+            
         bin_obj.save()
         broadcast_bin_update()
         return Response({'message': 'session ended'})
@@ -455,8 +411,8 @@ def esp_update_capacity(request):
         if capacity >= 90.0:
             employee_profiles = Profile.objects.filter(is_employee=True, is_approved_employee=True)
             for emp in employee_profiles:
-                if emp.fcm_token:
-                    send_fcm_notification(emp.fcm_token, "Bin Full Alert", f"Bin {bin_id} has reached {capacity}% capacity and needs collection.")
+                pass
+
         broadcast_bin_update()
         return Response({'message': 'Capacity updated successfully'})
     except Bin.DoesNotExist:
@@ -503,6 +459,15 @@ def get_all_bins(request):
         bins = Bin.objects.all()
         bins_data = BinSerializer(bins, many=True).data
 
+        for b in bins_data:
+            cached_capacity = cache.get(f"bin_{b['bin_id']}_capacity")
+            if cached_capacity is not None:
+                b['capacity'] = cached_capacity
+            
+            cached_crowd_level = cache.get(f"bin_{b['bin_id']}_crowd_level")
+            if cached_crowd_level is not None:
+                b['crowd_level'] = cached_crowd_level
+
         if lat_str and lng_str:
             try:
                 u_lat = float(lat_str)
@@ -527,7 +492,7 @@ def get_all_bins(request):
 @permission_classes([IsAuthenticated])
 def get_activities(request):
     username = request.query_params.get('username')
-    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
     request_is_root = (request.user.email == admin_email and request.user.is_superuser)
     if request.user.username != username and not request_is_root:
         return Response({'error': 'unauthorized'}, status=403)
@@ -538,7 +503,24 @@ def get_activities(request):
     end = start + limit
     try:
         user = User.objects.get(username=username)
-        activities = Activity.objects.filter(user=user).order_by('-date')
+        activities = Activity.objects.filter(user=user)
+        
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+        
+        if start_date_str:
+            try:
+                activities = activities.filter(date__gte=start_date_str)
+            except ValueError:
+                pass
+                
+        if end_date_str:
+            try:
+                activities = activities.filter(date__lte=end_date_str)
+            except ValueError:
+                pass
+                
+        activities = activities.order_by('-date')
         total_activities = activities.count()
         paginated_activities = activities[start:end]
         serializer = ActivitySerializer(paginated_activities, many=True)
@@ -558,18 +540,14 @@ def get_rewards(request):
     username = request.query_params.get('username')
     category_filter = request.query_params.get('category', 'All')
     user_points = 0
-    milestone_points = 0
     premium_unlocked = False
-    redemption_level = 1
 
     if username:
         try:
             u = User.objects.get(username=username)
             p, created = Profile.objects.get_or_create(user=u)
             user_points = p.points
-            milestone_points = p.milestone_points
             premium_unlocked = p.premium_unlocked
-            redemption_level = p.redemption_level
         except Exception:
             pass
 
@@ -587,7 +565,7 @@ def get_rewards(request):
 
         r_data = RewardSerializer(r, context={'request': request}).data
 
-        is_expired = r.valid_until and r.valid_until < now
+        is_expired = r.valid_until and r.valid_until < now.date()
         is_out_of_stock = r.stock_quantity == 0
 
         if r.dynamic_limit > 0 and username:
@@ -603,10 +581,7 @@ def get_rewards(request):
             r_data['progress_percentage'] = 0.0
         elif r.is_premium and not premium_unlocked:
             r_data['status'] = 'locked'
-            r_data['progress_percentage'] = min(milestone_points / 1000.0, 1.0)
-        elif redemption_level < r.tier:
-            r_data['status'] = 'locked'
-            r_data['progress_percentage'] = 0.0
+            r_data['progress_percentage'] = min(user_points / 1000.0, 1.0)
         elif user_points >= r.required_points:
             r_data['status'] = 'redeem'
             r_data['progress_percentage'] = 1.0
@@ -617,15 +592,12 @@ def get_rewards(request):
 
         data.append(r_data)
 
-    points_left = 1000 - milestone_points if milestone_points < 1000 else 0
+    points_left = 1000 - user_points if user_points < 1000 else 0
     return Response({
         'rewards': data,
         'user_points': user_points,
-        'milestone_points': milestone_points,
-        'next_milestone': 1000,
         'points_left': points_left,
         'premium_unlocked': premium_unlocked,
-        'redemption_level': redemption_level
     })
 
 
@@ -641,7 +613,7 @@ def redeem_reward(request):
         reward = Reward.objects.select_for_update().get(id=reward_id)
         now = timezone.now()
 
-        if reward.valid_until and reward.valid_until < now:
+        if reward.valid_until and reward.valid_until < now.date():
             return Response({'error': 'reward expired'}, status=400)
 
         if reward.stock_quantity == 0:
@@ -655,8 +627,7 @@ def redeem_reward(request):
         if reward.is_premium and not profile.premium_unlocked:
             return Response({'error': 'premium rewards locked'}, status=400)
 
-        if profile.redemption_level < reward.tier:
-            return Response({'error': 'tier too low'}, status=400)
+
 
         if profile.points < reward.required_points:
             return Response({'error': 'not enough points to unlock/redeem'}, status=400)
@@ -695,23 +666,10 @@ def redeem_reward(request):
         return Response({'error': str(error)}, status=400)
 
 
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
-def update_fcm_token(request):
-    token = request.data.get('fcm_token')
-    if not token:
-        return Response({"error": "FCM token is required"}, status=status.HTTP_400_BAD_REQUEST)
-
-    profile, created = Profile.objects.get_or_create(user=request.user)
-    profile.fcm_token = token
-    profile.save()
-    return Response({"message": "FCM token updated successfully"}, status=status.HTTP_200_OK)
-
-
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
 def dashboard_stats(request):
-    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'sagedryan775@gmail.com')
+    admin_email = getattr(settings, 'SUPER_ADMIN_EMAIL', 'admin@smartbin.com')
     if not (request.user.email == admin_email and request.user.is_superuser):
         return Response({'error': 'unauthorized'}, status=403)
 
@@ -736,16 +694,97 @@ def dashboard_stats(request):
 def get_redemption_history(request):
     try:
         user = request.user
-        history = RedeemedReward.objects.filter(user=user).select_related('reward').order_by('-redeemed_at')
+        history = RedeemedReward.objects.filter(user=user).select_related('reward')
+        
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+        
+        if start_date_str:
+            try:
+                history = history.filter(redeemed_at__gte=start_date_str)
+            except ValueError:
+                pass
+                
+        if end_date_str:
+            try:
+                history = history.filter(redeemed_at__lte=end_date_str)
+            except ValueError:
+                pass
+                
+        history = history.order_by('-redeemed_at')
         data = []
         for h in history:
             data.append({
                 'id': h.id,
                 'reward_name': h.reward.name,
                 'icon_category': h.reward.icon_category,
-                'redeemed_at': h.redeemed_at,
+                'redeemed_at': h.redeemed_at.isoformat() if h.redeemed_at else None,
                 'promo_code': h.promo_code
             })
         return Response({'history': data})
     except Exception as e:
         return Response({'error': str(e)}, status=500)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_leaderboard(request):
+    try:
+        top_profiles = Profile.objects.filter(is_employee=False, is_approved_employee=False).order_by('-co2_saved', '-points')[:50]
+        data = []
+        for rank, p in enumerate(top_profiles, start=1):
+            data.append({
+                'rank': rank,
+                'username': p.user.username,
+                'points': p.points,
+                'co2_saved': round(p.co2_saved, 2),
+                'profile_picture': p.profile_picture.url if p.profile_picture else None
+            })
+        return Response(data, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+import hmac
+import hashlib
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def sync_ble_offline(request):
+    try:
+        user = request.user
+        payload = request.data.get('payload')
+        signature = request.data.get('signature')
+        bin_id = request.data.get('bin_id')
+        
+        if not payload or not signature or not bin_id:
+            return Response({'error': 'Missing data'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        bin_obj = Bin.objects.filter(bin_id=bin_id).first()
+        if not bin_obj or not bin_obj.hardware_token:
+            return Response({'error': 'Invalid bin'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        secret_key = bin_obj.hardware_token.encode('utf-8')
+        payload_bytes = json.dumps(payload, separators=(',', ':')).encode('utf-8')
+        expected_signature = hmac.new(secret_key, payload_bytes, hashlib.sha256).hexdigest()
+        
+        if not hmac.compare_digest(expected_signature, signature):
+            return Response({'error': 'Invalid signature'}, status=status.HTTP_403_FORBIDDEN)
+            
+        sessions = payload if isinstance(payload, list) else [payload]
+        profile, _ = Profile.objects.get_or_create(user=user)
+        
+        from api.services import process_deposit_payload
+        for session in sessions:
+            weight_g = float(session.get('weight_g', session.get('weight', 0.0)))
+            is_metal_str = session.get('is_metal')
+            is_metal = str(is_metal_str).lower() == 'true' if is_metal_str is not None else None
+            material_type = session.get('material', session.get('material_type'))
+            if material_type:
+                material_type = material_type.lower()
+                
+            process_deposit_payload(profile, weight_g, is_metal=is_metal, material_type=material_type)
+            
+        return Response({'message': 'Offline data synced successfully'}, status=status.HTTP_200_OK)
+    except Exception as e:
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

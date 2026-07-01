@@ -155,13 +155,17 @@ class ApiService {
     }
   }
 
-  Future<Map<String, dynamic>> employeeUpdateLocation(String binId, double lat, double lng) async {
+  Future<Map<String, dynamic>> employeeUpdateLocation(String binId, double lat, double lng, {String? name}) async {
     try {
-      final response = await _dio.post('/employee/update-location/', data: {
+      var data = {
         'bin_id': binId,
         'lat': lat,
         'lng': lng,
-      });
+      };
+      if (name != null && name.isNotEmpty) {
+        data['name'] = name;
+      }
+      final response = await _dio.post('/employee/update-location/', data: data);
       return response.data;
     } on DioException catch (e) {
       throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
@@ -189,9 +193,22 @@ class ApiService {
     }
   }
 
-  Future<void> updateFcmToken(String fcmToken) async {
+  Future<List<dynamic>> getLeaderboard() async {
     try {
-      await _dio.post('/update-fcm-token/', data: {'fcm_token': fcmToken});
+      final response = await _dio.get('/leaderboard/');
+      return response.data;
+    } on DioException catch (e) {
+      throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
+    }
+  }
+
+  Future<void> syncBleOffline(String binId, List<dynamic> payload, String signature) async {
+    try {
+      await _dio.post('/sync-ble-offline/', data: {
+        'bin_id': binId,
+        'payload': payload,
+        'signature': signature,
+      });
     } on DioException catch (e) {
       throw Exception(e.response?.data['error'] ?? 'network_error'.tr());
     }

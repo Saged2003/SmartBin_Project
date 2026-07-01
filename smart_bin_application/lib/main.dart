@@ -17,6 +17,7 @@ import 'providers/bins_provider.dart';
 import 'providers/rewards_provider.dart';
 import 'providers/ble_sync_provider.dart';
 import 'api_service.dart';
+import 'offline_ble_sync_service.dart';
 
 import 'providers/theme_provider.dart';
 
@@ -34,6 +35,7 @@ void main() {
 
     await Hive.initFlutter();
     await Hive.openBox('offline_data');
+    OfflineBleSyncService.initializeBackgroundSync();
 
     await SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
